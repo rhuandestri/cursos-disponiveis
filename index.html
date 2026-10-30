@@ -218,6 +218,31 @@
     .dash-grid{grid-template-columns:1fr}
   }
 
+  /* ---- impressão ---- */
+  .btn-perigo{background:var(--danger);color:#fff;border:1px solid var(--danger);font-weight:600;padding:9px 14px;border-radius:10px;font:inherit;font-size:14px;cursor:pointer}
+  #dlg-confirm{width:min(440px,calc(100vw - 32px))}
+  #dlg-confirm .cal-box h2{margin:0}
+  #dlg-confirm .cal-box p{margin:0;font-size:15px;line-height:1.5}
+
+  .dash-topo{display:flex;justify-content:flex-end;margin-bottom:14px}
+  .erro-form{background:#fdecea;color:#8a1f14;border:1px solid #f1b5ad;border-radius:10px;padding:10px 12px;font-size:14px}
+  [data-theme="dark"] .erro-form{background:#3a1714;color:#ffb4aa;border-color:#6b2a24}
+  .hist-tabela td{vertical-align:top}
+
+  @media print{
+    body{background:#fff;color:#000;padding:0}
+    .acoes-topo,.abas,.toolbar,.sidebar,.resumo,#aba-dash,#aba-hist,.so-admin,.sub,.logo-escuro{display:none !important}
+    .layout{display:block}
+    .tabela-wrap{border:0;box-shadow:none;overflow:visible}
+    table{min-width:0}
+    th,td{padding:6px;font-size:11px;border-bottom:1px solid #ccc}
+    th{background:#eee;color:#000;position:static}
+    tr.fds td{background:#fff3c4 !important}
+    .badge,.chip{border:1px solid #999;background:#fff !important;color:#000 !important}
+    h1{font-size:18px;color:#000}
+    .logo-claro{height:24px}
+  }
+
   @media (max-width:820px){
     .layout{grid-template-columns:1fr}
     .sidebar{position:static}
@@ -242,13 +267,16 @@
     </div>
     <div class="acoes-topo">
       <button class="btn-ghost" id="btn-tema" type="button" aria-label="Alternar modo claro e escuro">🌙 Escuro</button>
-      <button class="btn-primary" id="btn-novo" type="button">+ Nova turma</button>
+      <button class="btn-primary so-admin" id="btn-novo" type="button">+ Nova turma</button>
+      <button class="btn-ghost" id="btn-imprimir" type="button">Imprimir</button>
+      <button class="btn-ghost" id="btn-backup" type="button">Baixar backup</button>
     </div>
   </header>
 
   <nav class="abas" role="tablist">
     <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Lista</button>
     <button class="aba" type="button" role="tab" data-aba="dash" aria-selected="false">Dashboard</button>
+    <button class="aba" type="button" role="tab" data-aba="hist" aria-selected="false">Histórico</button>
   </nav>
 
   <div class="layout" id="aba-lista">
@@ -294,7 +322,7 @@
               <th>Horário</th>
               <th>Datas</th>
               <th>Programação</th>
-              <th></th>
+              <th class="so-admin"></th>
             </tr>
           </thead>
           <tbody id="corpo" aria-live="polite"></tbody>
@@ -305,6 +333,16 @@
 </div>
 
 <section id="aba-dash" class="dash" hidden>
+  <div class="dash-topo">
+    <label class="campo">Mostrar
+      <select id="dash-periodo">
+        <option value="30">Próximos 30 dias</option>
+        <option value="60">Próximos 60 dias</option>
+        <option value="90">Próximos 90 dias</option>
+        <option value="0">Todas as datas futuras</option>
+      </select>
+    </label>
+  </div>
   <div class="kpis" id="kpis"></div>
   <div class="dash-grid">
     <div>
@@ -314,6 +352,25 @@
     <div>
       <h3>Próximas datas</h3>
       <div class="painel lista-prox" id="proximas"></div>
+    </div>
+  </div>
+</section>
+
+<section id="aba-hist" class="dash" hidden>
+  <div class="painel">
+    <div class="tabela-wrap" style="border:0;box-shadow:none">
+      <table class="hist-tabela">
+        <thead>
+          <tr>
+            <th>Quando</th>
+            <th>Ação</th>
+            <th>Turma</th>
+            <th>Curso</th>
+            <th>Detalhes</th>
+          </tr>
+        </thead>
+        <tbody id="hist-corpo"></tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -336,6 +393,7 @@
         <span class="dica">Use dd/mm/aaaa, separadas por vírgula.</span>
       </label>
     </div>
+    <p id="f-erro" class="erro-form" hidden></p>
     <div class="botoes-modal">
       <button class="btn-ghost" type="button" id="btn-cancelar">Cancelar</button>
       <button class="btn-primary" type="submit" id="btn-salvar">Salvar</button>
@@ -367,6 +425,17 @@
     <ul class="cal-legenda" id="cal-legenda"></ul>
     <div class="botoes-modal">
       <button class="btn-ghost" type="button" id="cal-filtrar">Mostrar só este curso na lista</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-confirm">
+  <div class="cal-box">
+    <h2 id="conf-titulo">Confirmar</h2>
+    <p id="conf-texto"></p>
+    <div class="botoes-modal">
+      <button class="btn-ghost" type="button" id="conf-nao">Cancelar</button>
+      <button class="btn-primary" type="button" id="conf-sim">Confirmar</button>
     </div>
   </div>
 </dialog>
@@ -434,6 +503,22 @@
     return futuras[0] || null;
   }
   function chaveData(c){ return proximaData(c.datas) || '9999-12-31'; }
+  function validarDatas(texto){
+    const partes = texto.split(',').map(s => s.trim()).filter(Boolean);
+    const datas = new Set(), invalidas = [];
+    partes.forEach(p => {
+      const m = p.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      let ok = false;
+      if (m){
+        const d = new Date(+m[3], +m[2] - 1, +m[1]);
+        ok = d.getFullYear() === +m[3] && d.getMonth() === +m[2] - 1 && d.getDate() === +m[1];
+      }
+      if (ok) datas.add(`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+      else invalidas.push(p);
+    });
+    return {datas: [...datas].sort(), invalidas};
+  }
+
   function parseDatas(texto){
     const ms = [...texto.matchAll(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g)];
     const set = new Set(ms.map(m => `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`));
@@ -467,20 +552,19 @@
     el.classList.toggle('erro', erro);
   }
 
-  async function api(method, query='', body){
+  async function api(method, query='', body, tabela = CFG.tabela){
     const headers = {
       apikey: CFG.key,
       Authorization: `Bearer ${CFG.key}`,
       'Content-Type': 'application/json'
     };
     if (method === 'POST' || method === 'PATCH') headers.Prefer = 'return=minimal';
-    const res = await fetch(`${CFG.url}/rest/v1/${CFG.tabela}${query}`, {
+    const res = await fetch(`${CFG.url}/rest/v1/${tabela}${query}`, {
       method, headers, body: body ? JSON.stringify(body) : undefined
     });
     if (!res.ok) throw new Error(await res.text());
     if (method !== 'GET') return null;
-    const rows = await res.json();
-    return rows.map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas}));
+    return res.json();
   }
 
   function carregarLocal(){
@@ -496,13 +580,35 @@
 
   async function recarregar(){
     if (usaRemoto()){
-      cursos = await api('GET', '?select=*&order=created_at.asc');
+      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas}));
     } else {
       cursos = carregarLocal();
     }
   }
 
+  const CAMPOS_TURMA = ['turma','curso','horario','datas'];
+
+  function descreverMudancas(antes, depois){
+    const partes = [];
+    CAMPOS_TURMA.forEach(k => {
+      const fmt = v => Array.isArray(v) ? v.map(fmtBR).join(', ') : String(v ?? '');
+      const a = fmt(antes[k]), b = fmt(depois[k]);
+      if (a !== b) partes.push(`${k}: ${a} → ${b}`);
+    });
+    return partes.join(' | ') || 'sem mudanças';
+  }
+
+  async function registrar(acao, turma, detalhes){
+    if (!usaRemoto()) return;
+    try {
+      await api('POST', '', {acao, turma: turma.turma, curso: turma.curso, detalhes}, 'historico');
+    } catch(e){
+      console.warn('Histórico não foi salvo:', e.message);
+    }
+  }
+
   async function gravar(dados, id){
+    const antes = id ? cursos.find(x => x.id === id) : null;
     if (usaRemoto()){
       if (id) await api('PATCH', `?id=eq.${id}`, dados);
       else    await api('POST', '', dados);
@@ -512,9 +618,12 @@
       else    cursos.push({id: novoId(), ...dados});
       salvarLocal();
     }
+    if (id) await registrar('editou', {...antes, ...dados}, descreverMudancas(antes, dados));
+    else    await registrar('criou', dados, `datas: ${dados.datas.map(fmtBR).join(', ')}`);
   }
 
   async function excluir(id){
+    const alvo = cursos.find(x => x.id === id);
     if (usaRemoto()){
       await api('DELETE', `?id=eq.${id}`);
       await recarregar();
@@ -522,6 +631,7 @@
       cursos = cursos.filter(x => x.id !== id);
       salvarLocal();
     }
+    if (alvo) await registrar('excluiu', alvo, `datas: ${alvo.datas.map(fmtBR).join(', ')}`);
   }
 
   /* ---------- coluna de cursos ---------- */
@@ -572,7 +682,7 @@
         <td><div class="datas">${chips}</div></td>
         <td class="nowrap"><span class="badge ${prox ? classeBadge : 'enc'}">${prox ? textoBadge : '—'}</span></td>
         <td>
-          <div class="acoes">
+          <div class="acoes so-admin">
             <button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>
             <button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>
           </div>
@@ -627,6 +737,7 @@
     $('f-curso').value = c ? c.curso : '';
     $('f-horario').value = c ? c.horario : '';
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
+    $('f-erro').hidden = true;
     $('dlg').showModal();
   }
 
@@ -635,25 +746,34 @@
 
   $('form').addEventListener('submit', async e => {
     e.preventDefault();
-    const datas = parseDatas($('f-datas').value);
-    if (!datas.length){
-      alert('Informe ao menos uma data no formato dd/mm/aaaa.');
-      return;
-    }
-    const dados = {
-      turma: $('f-turma').value.trim(),
-      curso: $('f-curso').value.trim(),
-      horario: $('f-horario').value.trim(),
-      datas
-    };
+    const mostrarErro = msg => { $('f-erro').textContent = msg; $('f-erro').hidden = false; };
+    $('f-erro').hidden = true;
+
+    const turma = $('f-turma').value.trim();
+    const curso = $('f-curso').value.trim();
+    const horario = $('f-horario').value.trim();
+
+    // duplicata: mesmo código em outra linha
+    const dup = cursos.find(c => c.turma === turma && c.id !== editandoId);
+    if (dup) return mostrarErro(`A turma ${turma} já existe (${dup.curso}). Use outro código ou edite a existente.`);
+
+    // datas que não existem ou estão escritas errado
+    const {datas, invalidas} = validarDatas($('f-datas').value);
+    if (invalidas.length) return mostrarErro(`Datas inválidas: ${invalidas.join(', ')}. Use dd/mm/aaaa e datas que existem no calendário.`);
+    if (!datas.length) return mostrarErro('Informe ao menos uma data no formato dd/mm/aaaa.');
+
+    // horário fora do padrão: avisa e deixa decidir
+    const padraoHorario = /^\d{2}h\d{2} às \d{2}h\d{2}$/.test(horario);
+    if (!padraoHorario && !(await perguntar(`O horário "${horario}" está fora do padrão (ex: 08h00 às 17h00). Salvar mesmo assim?`, {titulo: 'Horário fora do padrão', sim: 'Salvar mesmo assim'}))) return;
+
     $('btn-salvar').disabled = true;
     try {
-      await gravar(dados, editandoId);
+      await gravar({turma, curso, horario, datas}, editandoId);
       $('dlg').close();
       render();
       setStatus(usaRemoto() ? 'Salvo no Supabase' : 'Salvo neste navegador');
     } catch(err){
-      setStatus('Erro ao salvar: ' + err.message, true);
+      mostrarErro('Erro ao salvar: ' + err.message);
     } finally {
       $('btn-salvar').disabled = false;
     }
@@ -674,7 +794,8 @@
     }
     if (btnEx){
       const c = cursos.find(x => x.id === btnEx.dataset.excluir);
-      if (!c || !confirm(`Excluir ${c.curso} (${c.turma})?`)) return;
+      if (!c) return;
+      if (!(await perguntar(`Excluir ${c.curso} (turma ${c.turma})? Esta ação não pode ser desfeita.`, {titulo: 'Excluir turma', sim: 'Excluir', perigo: true}))) return;
       try {
         await excluir(c.id);
         render();
@@ -810,8 +931,9 @@
 
   function renderDashboard(){
     const h = hoje();
+    const dias = +$('dash-periodo').value;
     const limite = new Date(h);
-    limite.setDate(limite.getDate() + 30);
+    limite.setDate(limite.getDate() + (dias || 36500));
 
     // todas as datas futuras, em ordem
     const entradas = [];
@@ -820,7 +942,8 @@
     }));
     entradas.sort((a,b) => a.data.localeCompare(b.data) || a.curso.localeCompare(b.curso,'pt-BR'));
 
-    const turmasProx30 = new Set(entradas.filter(e => toDate(e.data) <= limite).map(e => e.turma));
+    const noPeriodo = entradas.filter(e => toDate(e.data) <= limite);
+    const turmasNoPeriodo = new Set(noPeriodo.map(e => e.turma));
     const comFds = cursos.filter(t => statusFds(t.datas) !== 'Não').length;
     const nCursos = new Set(cursos.map(t => t.curso)).size;
     const primeira = entradas[0];
@@ -828,14 +951,14 @@
     $('kpis').innerHTML = [
       ['Cursos diferentes', nCursos],
       ['Turmas cadastradas', cursos.length],
-      ['Com aula nos próximos 30 dias', turmasProx30.size],
+      ['Turmas com aula no período', turmasNoPeriodo.size],
       ['Turmas com fim de semana', comFds],
       ['Próxima aula', primeira ? fmtBR(primeira.data) : '—']
     ].map(([rot, val]) => `<div class="kpi"><span>${rot}</span><strong>${val}</strong></div>`).join('');
 
     // próximas datas agrupadas por dia
     const porDia = new Map();
-    entradas.forEach(e => {
+    noPeriodo.forEach(e => {
       if (!porDia.has(e.data)) porDia.set(e.data, []);
       porDia.get(e.data).push(e);
     });
@@ -873,15 +996,90 @@
   });
 
   function mostrarAba(nome){
-    const lista = nome === 'lista';
-    $('aba-lista').hidden = !lista;
-    $('aba-dash').hidden = lista;
+    $('aba-lista').hidden = nome !== 'lista';
+    $('aba-dash').hidden = nome !== 'dash';
+    $('aba-hist').hidden = nome !== 'hist';
     document.querySelectorAll('.aba').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
-    if (!lista) renderDashboard();
+    if (nome === 'dash') renderDashboard();
+    if (nome === 'hist') carregarHistorico();
   }
   document.querySelectorAll('.aba').forEach(b =>
     b.addEventListener('click', () => mostrarAba(b.dataset.aba)));
+
+  /* ---------- atualização automática ---------- */
+  async function atualizar(){
+    if ($('dlg').open || $('dlg-cal').open) return;
+    try {
+      await recarregar();
+      render();
+    } catch(e){}
+  }
+  setInterval(atualizar, 60000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) atualizar();
+  });
+
+  /* ---------- impressão ---------- */
+  $('btn-imprimir').addEventListener('click', () => window.print());
+
+  /* ---------- histórico ---------- */
+  async function carregarHistorico(){
+    const corpo = $('hist-corpo');
+    if (!usaRemoto()){
+      corpo.innerHTML = '<tr><td colspan="5" class="vazio">O histórico fica disponível com o Supabase ligado.</td></tr>';
+      return;
+    }
+    corpo.innerHTML = '<tr><td colspan="5" class="vazio">Carregando…</td></tr>';
+    try {
+      const rows = await api('GET', '?select=*&order=created_at.desc&limit=300', null, 'historico');
+      corpo.innerHTML = rows.length ? rows.map(r => `
+        <tr>
+          <td class="nowrap">${new Date(r.created_at).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})}</td>
+          <td>${esc(r.acao)}</td>
+          <td class="nowrap">${esc(r.turma)}</td>
+          <td>${esc(r.curso)}</td>
+          <td>${esc(r.detalhes || '')}</td>
+        </tr>`).join('')
+        : '<tr><td colspan="5" class="vazio">Nenhum registro ainda.</td></tr>';
+    } catch(err){
+      corpo.innerHTML = `<tr><td colspan="5" class="vazio">Não foi possível carregar: ${esc(err.message)}</td></tr>`;
+    }
+  }
+
+  /* ---------- backup ---------- */
+  $('btn-backup').addEventListener('click', () => {
+    const conteudo = {
+      gerado_em: new Date().toISOString(),
+      total: cursos.length,
+      turmas: cursos.map(({id, ...r}) => r)
+    };
+    const blob = new Blob([JSON.stringify(conteudo, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cursos-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  $('dash-periodo').addEventListener('change', renderDashboard);
+
+  /* ---------- janela de confirmação ---------- */
+  function perguntar(texto, {titulo = 'Confirmar', sim = 'Confirmar', perigo = false} = {}){
+    return new Promise(resolve => {
+      $('conf-titulo').textContent = titulo;
+      $('conf-texto').textContent = texto;
+      const botaoSim = $('conf-sim');
+      botaoSim.textContent = sim;
+      botaoSim.className = perigo ? 'btn-perigo' : 'btn-primary';
+      const fechar = valor => { $('dlg-confirm').close(); resolve(valor); };
+      botaoSim.onclick = () => fechar(true);
+      $('conf-nao').onclick = () => fechar(false);
+      $('dlg-confirm').addEventListener('close', () => resolve(false), {once: true});
+      $('dlg-confirm').showModal();
+    });
+  }
 
   /* ---------- início ---------- */
   (async function iniciar(){
