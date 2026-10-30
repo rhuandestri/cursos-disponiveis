@@ -234,6 +234,10 @@
   .unidade{margin:6px 0 0;font-size:12px;letter-spacing:.06em;font-weight:600;color:var(--muted)}
   .credito{font-size:12px;color:var(--muted);align-self:center;white-space:nowrap}
 
+  .hist-acoes{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .hist-acoes .muted{font-size:13px}
+  .hist-tabela input[type="checkbox"]{width:auto;accent-color:var(--primary);cursor:pointer}
+
   .dash-topo{display:flex;justify-content:flex-end;margin-bottom:14px}
   .erro-form{background:#fdecea;color:#8a1f14;border:1px solid #f1b5ad;border-radius:10px;padding:10px 12px;font-size:14px}
   [data-theme="dark"] .erro-form{background:#3a1714;color:#ffb4aa;border-color:#6b2a24}
@@ -378,10 +382,16 @@
 
 <section id="aba-hist" class="dash" hidden>
   <div class="painel">
+    <div class="hist-acoes">
+      <button class="btn-danger btn-small" type="button" id="hist-apagar-sel">Apagar selecionados</button>
+      <button class="btn-danger btn-small" type="button" id="hist-apagar-tudo">Apagar tudo</button>
+      <span class="muted" id="hist-contador"></span>
+    </div>
     <div class="tabela-wrap" style="border:0;box-shadow:none">
       <table class="hist-tabela">
         <thead>
           <tr>
+            <th><input type="checkbox" id="hist-todos" aria-label="Selecionar todos"></th>
             <th>Quando</th>
             <th>Ação</th>
             <th>Turma</th>
@@ -1077,26 +1087,72 @@
   /* ---------- histórico ---------- */
   async function carregarHistorico(){
     const corpo = $('hist-corpo');
+    $('hist-todos').checked = false;
+    $('hist-contador').textContent = '';
     if (!usaRemoto()){
-      corpo.innerHTML = '<tr><td colspan="5" class="vazio">O histórico fica disponível com o Supabase ligado.</td></tr>';
+      corpo.innerHTML = '<tr><td colspan="6" class="vazio">O histórico fica disponível com o Supabase ligado.</td></tr>';
       return;
     }
-    corpo.innerHTML = '<tr><td colspan="5" class="vazio">Carregando…</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="6" class="vazio">Carregando…</td></tr>';
     try {
       const rows = await api('GET', '?select=*&order=created_at.desc&limit=300', null, 'historico');
       corpo.innerHTML = rows.length ? rows.map(r => `
         <tr>
+          <td><input type="checkbox" class="hist-check" data-id="${r.id}" aria-label="Selecionar registro"></td>
           <td class="nowrap">${new Date(r.created_at).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'})}</td>
           <td>${esc(r.acao)}</td>
           <td class="nowrap">${esc(r.turma)}</td>
           <td>${esc(r.curso)}</td>
           <td>${esc(r.detalhes || '')}</td>
         </tr>`).join('')
-        : '<tr><td colspan="5" class="vazio">Nenhum registro ainda.</td></tr>';
+        : '<tr><td colspan="6" class="vazio">Nenhum registro ainda.</td></tr>';
     } catch(err){
-      corpo.innerHTML = `<tr><td colspan="5" class="vazio">Não foi possível carregar: ${esc(err.message)}</td></tr>`;
+      corpo.innerHTML = `<tr><td colspan="6" class="vazio">Não foi possível carregar: ${esc(err.message)}</td></tr>`;
     }
   }
+
+  /* ---------- apagar registros do histórico ---------- */
+  function atualizarContadorHist(){
+    const n = document.querySelectorAll('.hist-check:checked').length;
+    $('hist-contador').textContent = n ? `${n} selecionado(s)` : '';
+  }
+
+  async function apagarRegistros(ids){
+    if (!ids.length) { setStatus('Nenhum registro selecionado.', true); return; }
+    if (!(await perguntar(`Apagar ${ids.length} registro(s) do histórico? Esta ação não pode ser desfeita.`, {titulo: 'Apagar registros', sim: 'Apagar', perigo: true}))) return;
+    try {
+      for (let i = 0; i < ids.length; i += 50){
+        const lote = ids.slice(i, i + 50).join(',');
+        await api('DELETE', `?id=in.(${lote})`, null, 'historico');
+      }
+      setStatus(`${ids.length} registro(s) apagado(s) do histórico`);
+      carregarHistorico();
+    } catch(err){
+      setStatus('Erro ao apagar: ' + err.message, true);
+    }
+  }
+
+  $('hist-corpo').addEventListener('change', e => {
+    if (e.target.classList.contains('hist-check')) atualizarContadorHist();
+  });
+  $('hist-todos').addEventListener('change', e => {
+    document.querySelectorAll('.hist-check').forEach(c => c.checked = e.target.checked);
+    atualizarContadorHist();
+  });
+  $('hist-apagar-sel').addEventListener('click', () => {
+    const ids = [...document.querySelectorAll('.hist-check:checked')].map(c => c.dataset.id);
+    apagarRegistros(ids);
+  });
+  $('hist-apagar-tudo').addEventListener('click', async () => {
+    if (!(await perguntar('Isso apaga TODO o histórico de alterações. Esta ação não pode ser desfeita.', {titulo: 'Apagar todo o histórico', sim: 'Apagar tudo', perigo: true}))) return;
+    try {
+      await api('DELETE', '?id=not.is.null', null, 'historico');
+      setStatus('Histórico apagado');
+      carregarHistorico();
+    } catch(err){
+      setStatus('Erro ao apagar: ' + err.message, true);
+    }
+  });
 
   /* ---------- backup ---------- */
   $('btn-backup').addEventListener('click', () => {
