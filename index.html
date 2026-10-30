@@ -238,6 +238,10 @@
   .hist-acoes .muted{font-size:13px}
   .hist-tabela input[type="checkbox"]{width:auto;accent-color:var(--primary);cursor:pointer}
 
+  .inscr{display:inline-flex;align-items:center;gap:6px}
+  .inscr strong{min-width:26px;text-align:center}
+  .inscr button{padding:2px 9px}
+
   .dash-topo{display:flex;justify-content:flex-end;margin-bottom:14px}
   .erro-form{background:#fdecea;color:#8a1f14;border:1px solid #f1b5ad;border-radius:10px;padding:10px 12px;font-size:14px}
   [data-theme="dark"] .erro-form{background:#3a1714;color:#ffb4aa;border-color:#6b2a24}
@@ -344,6 +348,7 @@
               <th>Turma</th>
               <th>Horário</th>
           <th>Situação</th>
+          <th>Inscritos</th>
               <th>Datas</th>
               <th>Programação</th>
               <th class="so-admin"></th>
@@ -423,6 +428,9 @@
           <option value="aberta">Aberta</option>
           <option value="cheia">Cheia</option>
         </select>
+      </label>
+      <label class="rot">Inscritos
+        <input id="f-inscritos" type="number" min="0" step="1" value="0">
       </label>
       <label class="rot full">Datas
         <textarea id="f-datas" rows="3" required placeholder="03/11/2026, 04/11/2026, 05/11/2026"></textarea>
@@ -616,13 +624,13 @@
 
   async function recarregar(){
     if (usaRemoto()){
-      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta'}));
+      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta', inscritos: r.inscritos || 0}));
     } else {
       cursos = carregarLocal();
     }
   }
 
-  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao'];
+  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao','inscritos'];
 
   function descreverMudancas(antes, depois){
     const partes = [];
@@ -700,6 +708,20 @@
   });
 
   /* ---------- tabela ---------- */
+  function dadosDe(c){
+    return {turma: c.turma, curso: c.curso, horario: c.horario, datas: c.datas,
+            situacao: c.situacao || 'aberta', inscritos: c.inscritos || 0};
+  }
+
+  function inscritosHTML(c){
+    const n = c.inscritos || 0;
+    return `<div class="inscr">
+      <button class="btn-ghost btn-small" type="button" data-inscr="${esc(c.id)}" data-delta="-1" aria-label="Diminuir inscritos">−</button>
+      <strong>${n}</strong>
+      <button class="btn-ghost btn-small" type="button" data-inscr="${esc(c.id)}" data-delta="1" aria-label="Aumentar inscritos">+</button>
+    </div>`;
+  }
+
   function badgeSituacao(c){
     const cheia = c.situacao === 'cheia';
     return `<button class="badge-sit ${cheia ? 'cheia' : 'aberta'}" type="button" data-situacao="${esc(c.id)}" title="Clique para marcar como ${cheia ? 'aberta' : 'cheia'}">${cheia ? 'Cheia' : 'Aberta'}</button>`;
@@ -721,6 +743,7 @@
         <td class="nowrap">${esc(c.turma)}</td>
         <td class="nowrap">${esc(c.horario)}</td>
         <td class="nowrap">${badgeSituacao(c)}</td>
+        <td class="nowrap">${inscritosHTML(c)}</td>
         <td><div class="datas">${chips}</div></td>
         <td class="nowrap"><span class="badge ${prox ? classeBadge : 'enc'}">${prox ? textoBadge : '—'}</span></td>
         <td>
@@ -758,7 +781,7 @@
 
     $('corpo').innerHTML = lista.length
       ? lista.map(linhaHTML).join('')
-      : `<tr><td colspan="8" class="vazio">Nenhuma turma encontrada.</td></tr>`;
+      : `<tr><td colspan="9" class="vazio">Nenhuma turma encontrada.</td></tr>`;
     $('contador').textContent = `${lista.length} de ${cursos.length} turma(s)`;
 
     $('filtro-curso-wrap').innerHTML = cursoSel
@@ -781,6 +804,7 @@
     $('f-curso').value = c ? c.curso : '';
     $('f-horario').value = c ? c.horario : '';
     $('f-situacao').value = c && c.situacao === 'cheia' ? 'cheia' : 'aberta';
+    $('f-inscritos').value = c ? (c.inscritos || 0) : 0;
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
     $('f-erro').hidden = true;
     $('dlg').showModal();
@@ -798,6 +822,7 @@
     const curso = $('f-curso').value.trim();
     const horario = $('f-horario').value.trim();
     const situacao = $('f-situacao').value;
+    const inscritos = Math.max(0, parseInt($('f-inscritos').value, 10) || 0);
 
     // duplicata: mesmo código em outra linha
     const dup = cursos.find(c => c.turma === turma && c.id !== editandoId);
@@ -814,7 +839,7 @@
 
     $('btn-salvar').disabled = true;
     try {
-      await gravar({turma, curso, horario, datas, situacao}, editandoId);
+      await gravar({turma, curso, horario, datas, situacao, inscritos}, editandoId);
       $('dlg').close();
       render();
       setStatus(usaRemoto() ? 'Salvo no Supabase' : 'Salvo neste navegador');
@@ -827,13 +852,27 @@
 
   /* ---------- ações na tabela ---------- */
   $('corpo').addEventListener('click', async e => {
+    const btnInsc = e.target.closest('button[data-inscr]');
+    if (btnInsc){
+      const c = cursos.find(x => x.id === btnInsc.dataset.inscr);
+      if (!c) return;
+      const novo = Math.max(0, (c.inscritos || 0) + Number(btnInsc.dataset.delta));
+      try {
+        await gravar({...dadosDe(c), inscritos: novo}, c.id);
+        render();
+        setStatus(`Turma ${c.turma}: ${novo} inscrito(s)`);
+      } catch(err){
+        setStatus('Erro ao atualizar: ' + err.message, true);
+      }
+      return;
+    }
     const btnSit = e.target.closest('[data-situacao]');
     if (btnSit){
       const c = cursos.find(x => x.id === btnSit.dataset.situacao);
       if (!c) return;
       const nova = c.situacao === 'cheia' ? 'aberta' : 'cheia';
       try {
-        await gravar({turma: c.turma, curso: c.curso, horario: c.horario, datas: c.datas, situacao: nova}, c.id);
+        await gravar({...dadosDe(c), situacao: nova}, c.id);
         render();
         setStatus(`Turma ${c.turma} marcada como ${nova}`);
       } catch(err){
@@ -937,7 +976,7 @@
     $('cal-legenda').innerHTML = lista.length
       ? lista.map(t => `
           <li>
-            <strong>Turma ${esc(t.turma)}</strong> · ${esc(t.horario)} · <span class="muted">${t.situacao === 'cheia' ? 'Cheia' : 'Aberta'}</span><br>
+            <strong>Turma ${esc(t.turma)}</strong> · ${esc(t.horario)} · <span class="muted">${t.situacao === 'cheia' ? 'Cheia' : 'Aberta'}</span> · <span class="muted">${t.inscritos || 0} inscrito(s)</span><br>
             <span class="muted">${t.datas.slice().sort().map(fmtBR).join(', ')}</span>
           </li>`).join('')
       : '<li>Nenhuma turma cadastrada.</li>';
@@ -1012,6 +1051,7 @@
       ['Cursos diferentes', nCursos],
       ['Turmas cadastradas', cursos.length],
       ['Turmas abertas', cursos.filter(t => t.situacao !== 'cheia').length],
+      ['Total de inscritos', cursos.reduce((s, t) => s + (t.inscritos || 0), 0)],
       ['Turmas com aula no período', turmasNoPeriodo.size],
       ['Turmas com fim de semana', comFds],
       ['Próxima aula', primeira ? fmtBR(primeira.data) : '—']
