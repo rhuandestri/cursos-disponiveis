@@ -224,6 +224,13 @@
   #dlg-confirm .cal-box h2{margin:0}
   #dlg-confirm .cal-box p{margin:0;font-size:15px;line-height:1.5}
 
+  .badge-sit{font:inherit;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid transparent;cursor:pointer;white-space:nowrap}
+  .badge-sit:hover{opacity:.8}
+  .badge-sit.aberta{background:#dff5e6;color:#17663a;border-color:#8fd1a6}
+  .badge-sit.cheia{background:#fbe4e1;color:#9b2b1f;border-color:#eba59c}
+  [data-theme="dark"] .badge-sit.aberta{background:#143a24;color:#8fe0aa;border-color:#246b40}
+  [data-theme="dark"] .badge-sit.cheia{background:#3d1a16;color:#ffb4aa;border-color:#7a3028}
+
   .dash-topo{display:flex;justify-content:flex-end;margin-bottom:14px}
   .erro-form{background:#fdecea;color:#8a1f14;border:1px solid #f1b5ad;border-radius:10px;padding:10px 12px;font-size:14px}
   [data-theme="dark"] .erro-form{background:#3a1714;color:#ffb4aa;border-color:#6b2a24}
@@ -297,7 +304,14 @@
             <option value="Não">Só dias úteis</option>
           </select>
         </label>
-        <label class="campo">Ordenar
+        <label class="campo">Situação
+        <select id="filtro-sit">
+          <option value="">Todas</option>
+          <option value="aberta">Abertas</option>
+          <option value="cheia">Cheias</option>
+        </select>
+      </label>
+      <label class="campo">Ordenar
           <select id="ordem">
             <option value="data">Data mais próxima</option>
             <option value="curso">Curso</option>
@@ -320,6 +334,7 @@
               <th>Curso</th>
               <th>Turma</th>
               <th>Horário</th>
+          <th>Situação</th>
               <th>Datas</th>
               <th>Programação</th>
               <th class="so-admin"></th>
@@ -387,6 +402,12 @@
       </label>
       <label class="rot full">Curso
         <input id="f-curso" required placeholder="ex: NR.35">
+      </label>
+      <label class="rot">Situação
+        <select id="f-situacao">
+          <option value="aberta">Aberta</option>
+          <option value="cheia">Cheia</option>
+        </select>
       </label>
       <label class="rot full">Datas
         <textarea id="f-datas" rows="3" required placeholder="03/11/2026, 04/11/2026, 05/11/2026"></textarea>
@@ -580,13 +601,13 @@
 
   async function recarregar(){
     if (usaRemoto()){
-      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas}));
+      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta'}));
     } else {
       cursos = carregarLocal();
     }
   }
 
-  const CAMPOS_TURMA = ['turma','curso','horario','datas'];
+  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao'];
 
   function descreverMudancas(antes, depois){
     const partes = [];
@@ -664,6 +685,11 @@
   });
 
   /* ---------- tabela ---------- */
+  function badgeSituacao(c){
+    const cheia = c.situacao === 'cheia';
+    return `<button class="badge-sit ${cheia ? 'cheia' : 'aberta'}" type="button" data-situacao="${esc(c.id)}" title="Clique para marcar como ${cheia ? 'aberta' : 'cheia'}">${cheia ? 'Cheia' : 'Aberta'}</button>`;
+  }
+
   function linhaHTML(c){
     const prox = proximaData(c.datas);
     const fds = statusFds(c.datas);
@@ -679,6 +705,7 @@
         <td class="curso"><button class="link-curso" type="button" data-calendario="${esc(c.curso)}" data-turma-cal="${esc(c.turma)}" title="Ver calendário desta turma">${esc(c.curso)}</button></td>
         <td class="nowrap">${esc(c.turma)}</td>
         <td class="nowrap">${esc(c.horario)}</td>
+        <td class="nowrap">${badgeSituacao(c)}</td>
         <td><div class="datas">${chips}</div></td>
         <td class="nowrap"><span class="badge ${prox ? classeBadge : 'enc'}">${prox ? textoBadge : '—'}</span></td>
         <td>
@@ -696,6 +723,7 @@
 
     const busca = $('busca').value.trim().toLowerCase();
     const fdsF = $('filtro-fds').value;
+    const sitF = $('filtro-sit').value;
     const ordem = $('ordem').value;
 
     const lista = cursos
@@ -704,6 +732,7 @@
         const txt = `${c.curso} ${c.turma} ${c.horario}`.toLowerCase();
         if (busca && !txt.includes(busca)) return false;
         if (fdsF && statusFds(c.datas) !== fdsF) return false;
+        if (sitF && (c.situacao || 'aberta') !== sitF) return false;
         return true;
       })
       .sort((a,b) => {
@@ -714,7 +743,7 @@
 
     $('corpo').innerHTML = lista.length
       ? lista.map(linhaHTML).join('')
-      : `<tr><td colspan="7" class="vazio">Nenhuma turma encontrada.</td></tr>`;
+      : `<tr><td colspan="8" class="vazio">Nenhuma turma encontrada.</td></tr>`;
     $('contador').textContent = `${lista.length} de ${cursos.length} turma(s)`;
 
     $('filtro-curso-wrap').innerHTML = cursoSel
@@ -736,6 +765,7 @@
     $('f-turma').value = c ? c.turma : '';
     $('f-curso').value = c ? c.curso : '';
     $('f-horario').value = c ? c.horario : '';
+    $('f-situacao').value = c && c.situacao === 'cheia' ? 'cheia' : 'aberta';
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
     $('f-erro').hidden = true;
     $('dlg').showModal();
@@ -752,6 +782,7 @@
     const turma = $('f-turma').value.trim();
     const curso = $('f-curso').value.trim();
     const horario = $('f-horario').value.trim();
+    const situacao = $('f-situacao').value;
 
     // duplicata: mesmo código em outra linha
     const dup = cursos.find(c => c.turma === turma && c.id !== editandoId);
@@ -768,7 +799,7 @@
 
     $('btn-salvar').disabled = true;
     try {
-      await gravar({turma, curso, horario, datas}, editandoId);
+      await gravar({turma, curso, horario, datas, situacao}, editandoId);
       $('dlg').close();
       render();
       setStatus(usaRemoto() ? 'Salvo no Supabase' : 'Salvo neste navegador');
@@ -781,6 +812,20 @@
 
   /* ---------- ações na tabela ---------- */
   $('corpo').addEventListener('click', async e => {
+    const btnSit = e.target.closest('[data-situacao]');
+    if (btnSit){
+      const c = cursos.find(x => x.id === btnSit.dataset.situacao);
+      if (!c) return;
+      const nova = c.situacao === 'cheia' ? 'aberta' : 'cheia';
+      try {
+        await gravar({turma: c.turma, curso: c.curso, horario: c.horario, datas: c.datas, situacao: nova}, c.id);
+        render();
+        setStatus(`Turma ${c.turma} marcada como ${nova}`);
+      } catch(err){
+        setStatus('Erro ao atualizar: ' + err.message, true);
+      }
+      return;
+    }
     const linkCal = e.target.closest('[data-calendario]');
     if (linkCal){
       abrirCalendario(linkCal.dataset.calendario, linkCal.dataset.turmaCal);
@@ -806,7 +851,7 @@
     }
   });
 
-  ['busca','filtro-fds','ordem'].forEach(id => {
+  ['busca','filtro-fds','filtro-sit','ordem'].forEach(id => {
     $(id).addEventListener('input', render);
     $(id).addEventListener('change', render);
   });
@@ -877,7 +922,7 @@
     $('cal-legenda').innerHTML = lista.length
       ? lista.map(t => `
           <li>
-            <strong>Turma ${esc(t.turma)}</strong> · ${esc(t.horario)}<br>
+            <strong>Turma ${esc(t.turma)}</strong> · ${esc(t.horario)} · <span class="muted">${t.situacao === 'cheia' ? 'Cheia' : 'Aberta'}</span><br>
             <span class="muted">${t.datas.slice().sort().map(fmtBR).join(', ')}</span>
           </li>`).join('')
       : '<li>Nenhuma turma cadastrada.</li>';
@@ -951,6 +996,7 @@
     $('kpis').innerHTML = [
       ['Cursos diferentes', nCursos],
       ['Turmas cadastradas', cursos.length],
+      ['Turmas abertas', cursos.filter(t => t.situacao !== 'cheia').length],
       ['Turmas com aula no período', turmasNoPeriodo.size],
       ['Turmas com fim de semana', comFds],
       ['Próxima aula', primeira ? fmtBR(primeira.data) : '—']
