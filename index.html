@@ -259,6 +259,7 @@
     .badge,.chip{border:1px solid #999;background:#fff !important;color:#000 !important}
     h1{font-size:18px;color:#000}
     .logo-claro{height:24px}
+    .col-sit,.col-insc{display:none !important}
   }
 
   @media (max-width:820px){
@@ -347,8 +348,8 @@
               <th>Curso</th>
               <th>Turma</th>
               <th>Horário</th>
-          <th>Situação</th>
-          <th>Inscritos</th>
+          <th class="col-sit">Situação</th>
+          <th class="col-insc">Inscritos</th>
               <th>Datas</th>
               <th>Programação</th>
               <th class="so-admin"></th>
@@ -742,8 +743,8 @@
         <td class="curso"><button class="link-curso" type="button" data-calendario="${esc(c.curso)}" data-turma-cal="${esc(c.turma)}" title="Ver calendário desta turma">${esc(c.curso)}</button></td>
         <td class="nowrap">${esc(c.turma)}</td>
         <td class="nowrap">${esc(c.horario)}</td>
-        <td class="nowrap">${badgeSituacao(c)}</td>
-        <td class="nowrap">${inscritosHTML(c)}</td>
+        <td class="nowrap col-sit">${badgeSituacao(c)}</td>
+        <td class="nowrap col-insc">${inscritosHTML(c)}</td>
         <td><div class="datas">${chips}</div></td>
         <td class="nowrap"><span class="badge ${prox ? classeBadge : 'enc'}">${prox ? textoBadge : '—'}</span></td>
         <td>
