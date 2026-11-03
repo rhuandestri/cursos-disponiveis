@@ -415,6 +415,7 @@
           <th>Horário</th>
           <th>Inscritos</th>
           <th>Situação</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="real-corpo"></tbody>
@@ -906,6 +907,7 @@
       await gravar({turma, curso, horario, datas, situacao, inscritos}, editandoId);
       $('dlg').close();
       render();
+      renderOutras();
       setStatus(usaRemoto() ? 'Salvo no Supabase' : 'Salvo neste navegador');
     } catch(err){
       mostrarErro('Erro ao salvar: ' + err.message);
@@ -1205,6 +1207,17 @@
     }
   };
 
+  function acoesOutras(c){
+    const s = statusTurma(c);
+    const canc = c.situacao === 'cancelada';
+    const botoes = [];
+    if (s === 'andamento') botoes.push(`<button class="btn-danger btn-small" type="button" data-acao="cancelar" data-id="${esc(c.id)}">Cancelar turma</button>`);
+    if (canc && s !== 'passada') botoes.push(`<button class="btn-ghost btn-small" type="button" data-acao="reabrir" data-id="${esc(c.id)}">Reabrir</button>`);
+    botoes.push(`<button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>`);
+    botoes.push(`<button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>`);
+    return botoes.join('');
+  }
+
   function renderOutras(){
     const termo = $('busca-real').value.trim().toLowerCase();
     const cfg = OUTRAS[outrasTipo];
@@ -1227,9 +1240,38 @@
           <td class="nowrap">${esc(c.horario)}</td>
           <td>${c.inscritos || 0}</td>
           <td><span class="badge ${canc ? 'enc' : ''}">${rotulo}</span></td>
+          <td><div class="acoes">${acoesOutras(c)}</div></td>
         </tr>`;
-    }).join('') : `<tr><td colspan="6" class="vazio">Nenhuma turma em "${cfg.titulo}".</td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="vazio">Nenhuma turma em "${cfg.titulo}".</td></tr>`;
   }
+
+  $('real-corpo').addEventListener('click', async e => {
+    const btn = e.target.closest('button[data-acao], button[data-editar], button[data-excluir]');
+    if (!btn) return;
+    const id = btn.dataset.id || btn.dataset.editar || btn.dataset.excluir;
+    const c = cursos.find(x => x.id === id);
+    if (!c) return;
+    if (btn.dataset.editar){
+      abrirModal(c);
+      return;
+    }
+    try {
+      if (btn.dataset.excluir){
+        if (!(await perguntar(`Excluir ${c.curso} (turma ${c.turma})? Esta ação não pode ser desfeita.`, {titulo: 'Excluir turma', sim: 'Excluir', perigo: true}))) return;
+        await excluir(c.id);
+      } else if (btn.dataset.acao === 'cancelar'){
+        if (!(await perguntar(`Cancelar a turma ${c.turma} (${c.curso})? Ela sai da lista de turmas em andamento.`, {titulo: 'Cancelar turma', sim: 'Cancelar turma', perigo: true}))) return;
+        await gravar({...dadosDe(c), situacao: 'cancelada'}, c.id);
+      } else if (btn.dataset.acao === 'reabrir'){
+        await gravar({...dadosDe(c), situacao: 'aberta'}, c.id);
+      }
+      render();
+      renderOutras();
+      setStatus('Alteração salva');
+    } catch(err){
+      setStatus('Erro: ' + err.message, true);
+    }
+  });
 
   $('outras-chips').addEventListener('click', e => {
     const b = e.target.closest('button[data-tipo]');
