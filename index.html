@@ -305,7 +305,7 @@
   <nav class="abas" role="tablist">
     <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Lista</button>
     <button class="aba" type="button" role="tab" data-aba="dash" aria-selected="false">Dashboard</button>
-    <button class="aba" type="button" role="tab" data-aba="real" aria-selected="false">Realizadas</button>
+    <button class="aba" type="button" role="tab" data-aba="real" aria-selected="false">Outras turmas</button>
     <button class="aba" type="button" role="tab" data-aba="hist" aria-selected="false">Histórico</button>
   </nav>
 
@@ -332,8 +332,6 @@
           <option value="">Todas</option>
           <option value="aberta">Abertas</option>
           <option value="cheia">Cheias</option>
-          <option value="andamento">Em andamento</option>
-          <option value="cancelada">Canceladas</option>
         </select>
       </label>
       <label class="campo">Ordenar
@@ -399,6 +397,11 @@
 </section>
 
 <section id="aba-real" class="dash" hidden>
+  <div class="cal-filtros" id="outras-chips" style="margin-bottom:12px">
+    <button type="button" data-tipo="andamento" aria-pressed="true">Em andamento</button>
+    <button type="button" data-tipo="canceladas" aria-pressed="false">Canceladas</button>
+    <button type="button" data-tipo="realizadas" aria-pressed="false">Realizadas</button>
+  </div>
   <div class="toolbar">
     <input id="busca-real" type="search" placeholder="Buscar por curso ou turma…" aria-label="Buscar turmas realizadas">
   </div>
@@ -716,7 +719,7 @@
   /* ---------- coluna de cursos ---------- */
   function renderSidebar(){
     const contagem = new Map();
-    cursos.filter(c => statusTurma(c) !== 'passada').forEach(c => contagem.set(c.curso, (contagem.get(c.curso) || 0) + 1));
+    cursos.filter(naListaPrincipal).forEach(c => contagem.set(c.curso, (contagem.get(c.curso) || 0) + 1));
     const nomes = [...contagem.keys()].sort((a,b) => a.localeCompare(b,'pt-BR'));
 
     // se o curso selecionado deixou de existir (ex.: foi excluído), volta para "todos"
@@ -731,7 +734,7 @@
       </li>`;
 
     $('lista-cursos').innerHTML =
-      item('Todos os cursos', cursos.filter(c => statusTurma(c) !== 'passada').length, cursoSel === '', '') +
+      item('Todos os cursos', cursos.filter(naListaPrincipal).length, cursoSel === '', '') +
       nomes.map(n => item(n, contagem.get(n), cursoSel === n, n)).join('');
   }
 
@@ -777,10 +780,12 @@
     return 'aberta';
   }
 
+  function naListaPrincipal(c){ const s = statusTurma(c); return s === 'aberta' || s === 'cheia'; }
+
   function badgeSituacao(c){
     const s = statusTurma(c);
     const rotulo = {aberta: 'Aberta', cheia: 'Cheia', cancelada: 'Cancelada', andamento: 'Em andamento'}[s] || 'Realizada';
-    if (s === 'andamento') return `<span class="badge-sit andamento" title="A turma já começou; a matrícula está fechada">${rotulo}</span>`;
+    if (s === 'andamento') return `<button class="badge-sit andamento" type="button" data-situacao="${esc(c.id)}" title="A turma já começou. Clique para cancelar">${rotulo}</button>`;
     return `<button class="badge-sit ${s}" type="button" data-situacao="${esc(c.id)}" title="Clique para trocar a situação">${rotulo}</button>`;
   }
 
@@ -823,7 +828,7 @@
 
     const lista = cursos
       .filter(c => {
-        if (statusTurma(c) === 'passada') return false;
+        if (!naListaPrincipal(c)) return false;
         if (cursoSel && c.curso !== cursoSel) return false;
         const txt = `${c.curso} ${c.turma} ${c.horario}`.toLowerCase();
         if (busca && !txt.includes(busca)) return false;
@@ -929,6 +934,17 @@
     if (btnSit){
       const c = cursos.find(x => x.id === btnSit.dataset.situacao);
       if (!c) return;
+      if (statusTurma(c) === 'andamento'){
+        if (!(await perguntar(`Cancelar a turma ${c.turma} (${c.curso})? Ela já começou e vai sair da lista de turmas ativas.`, {titulo: 'Cancelar turma em andamento', sim: 'Cancelar turma', perigo: true}))) return;
+        try {
+          await gravar({...dadosDe(c), situacao: 'cancelada'}, c.id);
+          render();
+          setStatus(`Turma ${c.turma} cancelada`);
+        } catch(err){
+          setStatus('Erro ao atualizar: ' + err.message, true);
+        }
+        return;
+      }
       const nova = {aberta: 'cheia', cheia: 'cancelada', cancelada: 'aberta'}[c.situacao || 'aberta'];
       try {
         await gravar({...dadosDe(c), situacao: nova}, c.id);
@@ -1170,16 +1186,39 @@
     if (b) abrirCalendario(b.dataset.calendario);
   });
 
-  function renderRealizadas(){
+  let outrasTipo = 'andamento';
+  const OUTRAS = {
+    andamento: {
+      titulo: 'Em andamento',
+      filtro: c => statusTurma(c) === 'andamento',
+      ordem: (a, b) => primeiraData(a).localeCompare(primeiraData(b))
+    },
+    canceladas: {
+      titulo: 'Canceladas',
+      filtro: c => c.situacao === 'cancelada',
+      ordem: (a, b) => primeiraData(a).localeCompare(primeiraData(b))
+    },
+    realizadas: {
+      titulo: 'Realizadas',
+      filtro: c => statusTurma(c) === 'passada' && c.situacao !== 'cancelada',
+      ordem: (a, b) => ultimaData(b).localeCompare(ultimaData(a))
+    }
+  };
+
+  function renderOutras(){
     const termo = $('busca-real').value.trim().toLowerCase();
+    const cfg = OUTRAS[outrasTipo];
+    document.querySelectorAll('#outras-chips button').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.tipo === outrasTipo)));
     const lista = cursos
-      .filter(c => statusTurma(c) === 'passada')
+      .filter(cfg.filtro)
       .filter(c => !termo || `${c.curso} ${c.turma}`.toLowerCase().includes(termo))
-      .sort((a,b) => ultimaData(b).localeCompare(ultimaData(a)));
+      .sort(cfg.ordem);
     $('real-corpo').innerHTML = lista.length ? lista.map(c => {
       const ini = primeiraData(c), fim = ultimaData(c);
       const periodo = ini === fim ? fmtBR(ini) : `${fmtBR(ini)} a ${fmtBR(fim)}`;
       const canc = c.situacao === 'cancelada';
+      const rotulo = canc ? 'Cancelada' : statusTurma(c) === 'andamento' ? 'Em andamento' : 'Realizada';
       return `
         <tr class="${canc ? 'cancelada' : ''}">
           <td class="nowrap">${periodo}</td>
@@ -1187,11 +1226,18 @@
           <td class="nowrap">${esc(c.turma)}</td>
           <td class="nowrap">${esc(c.horario)}</td>
           <td>${c.inscritos || 0}</td>
-          <td><span class="badge ${canc ? 'enc' : ''}">${canc ? 'Cancelada' : 'Realizada'}</span></td>
+          <td><span class="badge ${canc ? 'enc' : ''}">${rotulo}</span></td>
         </tr>`;
-    }).join('') : '<tr><td colspan="6" class="vazio">Nenhuma turma realizada encontrada.</td></tr>';
+    }).join('') : `<tr><td colspan="6" class="vazio">Nenhuma turma em "${cfg.titulo}".</td></tr>`;
   }
-  $('busca-real').addEventListener('input', renderRealizadas);
+
+  $('outras-chips').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tipo]');
+    if (!b) return;
+    outrasTipo = b.dataset.tipo;
+    renderOutras();
+  });
+  $('busca-real').addEventListener('input', renderOutras);
 
   function mostrarAba(nome){
     $('aba-lista').hidden = nome !== 'lista';
@@ -1201,7 +1247,7 @@
     document.querySelectorAll('.aba').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
     if (nome === 'dash') renderDashboard();
-    if (nome === 'real') renderRealizadas();
+    if (nome === 'real') renderOutras();
     if (nome === 'hist') carregarHistorico();
   }
   document.querySelectorAll('.aba').forEach(b =>
