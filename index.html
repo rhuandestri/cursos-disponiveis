@@ -303,7 +303,8 @@
   </header>
 
   <nav class="abas" role="tablist">
-    <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Lista</button>
+    <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Presencial</button>
+    <button class="aba" type="button" role="tab" data-aba="web" aria-selected="false">Web Aula</button>
     <button class="aba" type="button" role="tab" data-aba="dash" aria-selected="false">Dashboard</button>
     <button class="aba" type="button" role="tab" data-aba="real" aria-selected="false">Outras turmas</button>
     <button class="aba" type="button" role="tab" data-aba="hist" aria-selected="false">Histórico</button>
@@ -460,6 +461,12 @@
       </label>
       <label class="rot full">Curso
         <input id="f-curso" required placeholder="ex: NR.35">
+      </label>
+      <label class="rot">Modalidade
+        <select id="f-modalidade">
+          <option value="presencial">Presencial</option>
+          <option value="web">Web Aula</option>
+        </select>
       </label>
       <label class="rot">Situação
         <select id="f-situacao">
@@ -663,13 +670,13 @@
 
   async function recarregar(){
     if (usaRemoto()){
-      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta', inscritos: r.inscritos || 0}));
+      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta', inscritos: r.inscritos || 0, modalidade: r.modalidade || 'presencial'}));
     } else {
       cursos = carregarLocal();
     }
   }
 
-  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao','inscritos'];
+  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao','inscritos','modalidade'];
 
   function descreverMudancas(antes, depois){
     const partes = [];
@@ -718,9 +725,12 @@
   }
 
   /* ---------- coluna de cursos ---------- */
+  let modalAba = 'presencial'; // aba ativa: 'presencial' ou 'web'
+  function daAbaAtual(c){ return (c.modalidade || 'presencial') === modalAba; }
+
   function renderSidebar(){
     const contagem = new Map();
-    cursos.filter(naListaPrincipal).forEach(c => contagem.set(c.curso, (contagem.get(c.curso) || 0) + 1));
+    cursos.filter(c => naListaPrincipal(c) && daAbaAtual(c)).forEach(c => contagem.set(c.curso, (contagem.get(c.curso) || 0) + 1));
     const nomes = [...contagem.keys()].sort((a,b) => a.localeCompare(b,'pt-BR'));
 
     // se o curso selecionado deixou de existir (ex.: foi excluído), volta para "todos"
@@ -735,7 +745,7 @@
       </li>`;
 
     $('lista-cursos').innerHTML =
-      item('Todos os cursos', cursos.filter(naListaPrincipal).length, cursoSel === '', '') +
+      item('Todos os cursos', cursos.filter(c => naListaPrincipal(c) && daAbaAtual(c)).length, cursoSel === '', '') +
       nomes.map(n => item(n, contagem.get(n), cursoSel === n, n)).join('');
   }
 
@@ -749,7 +759,7 @@
   /* ---------- tabela ---------- */
   function dadosDe(c){
     return {turma: c.turma, curso: c.curso, horario: c.horario, datas: c.datas,
-            situacao: c.situacao || 'aberta', inscritos: c.inscritos || 0};
+            situacao: c.situacao || 'aberta', inscritos: c.inscritos || 0, modalidade: c.modalidade || 'presencial'};
   }
 
   function inscritosHTML(c){
@@ -829,7 +839,7 @@
 
     const lista = cursos
       .filter(c => {
-        if (!naListaPrincipal(c)) return false;
+        if (!naListaPrincipal(c) || !daAbaAtual(c)) return false;
         if (cursoSel && c.curso !== cursoSel) return false;
         const txt = `${c.curso} ${c.turma} ${c.horario}`.toLowerCase();
         if (busca && !txt.includes(busca)) return false;
@@ -847,7 +857,7 @@
     $('corpo').innerHTML = lista.length
       ? lista.map(linhaHTML).join('')
       : `<tr><td colspan="9" class="vazio">Nenhuma turma encontrada.</td></tr>`;
-    $('contador').textContent = `${lista.length} de ${cursos.length} turma(s)`;
+    $('contador').textContent = `${lista.length} de ${cursos.filter(daAbaAtual).length} turma(s)`;
 
     $('filtro-curso-wrap').innerHTML = cursoSel
       ? `<span class="filtro-ativo">${esc(cursoSel)} <button type="button" id="limpar-curso" aria-label="Mostrar todos os cursos">✕</button></span>`
@@ -868,6 +878,7 @@
     $('f-turma').value = c ? c.turma : '';
     $('f-curso').value = c ? c.curso : '';
     $('f-horario').value = c ? c.horario : '';
+    $('f-modalidade').value = c ? (c.modalidade || 'presencial') : modalAba;
     $('f-situacao').value = c && c.situacao === 'cheia' ? 'cheia' : 'aberta';
     $('f-inscritos').value = c ? (c.inscritos || 0) : 0;
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
@@ -887,6 +898,7 @@
     const curso = $('f-curso').value.trim();
     const horario = $('f-horario').value.trim();
     const situacao = $('f-situacao').value;
+    const modalidade = $('f-modalidade').value;
     const inscritos = Math.max(0, parseInt($('f-inscritos').value, 10) || 0);
 
     // duplicata: mesmo código em outra linha
@@ -904,7 +916,7 @@
 
     $('btn-salvar').disabled = true;
     try {
-      await gravar({turma, curso, horario, datas, situacao, inscritos}, editandoId);
+      await gravar({turma, curso, horario, datas, situacao, inscritos, modalidade}, editandoId);
       $('dlg').close();
       render();
       renderOutras();
@@ -1282,12 +1294,15 @@
   $('busca-real').addEventListener('input', renderOutras);
 
   function mostrarAba(nome){
-    $('aba-lista').hidden = nome !== 'lista';
+    const ehLista = nome === 'lista' || nome === 'web';
+    if (ehLista) modalAba = nome === 'web' ? 'web' : 'presencial';
+    $('aba-lista').hidden = !ehLista;
     $('aba-dash').hidden = nome !== 'dash';
     $('aba-real').hidden = nome !== 'real';
     $('aba-hist').hidden = nome !== 'hist';
     document.querySelectorAll('.aba').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
+    if (ehLista) render();
     if (nome === 'dash') renderDashboard();
     if (nome === 'real') renderOutras();
     if (nome === 'hist') carregarHistorico();
