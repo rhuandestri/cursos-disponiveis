@@ -141,7 +141,12 @@
     padding:0;width:min(560px,calc(100vw - 32px));box-shadow:0 20px 50px rgba(0,0,0,.35);
   }
   dialog::backdrop{background:rgba(0,0,0,.5)}
-  #dlg-alunos,#dlg-lig{width:min(960px,96vw)}
+  #dlg-alunos,#dlg-lig{width:min(1240px,98vw)}
+  #dlg-alunos{max-height:92vh;overflow:auto}
+  #dlg-alunos .tabela-wrap{overflow:visible}
+  #dlg-alunos table{width:100%}
+  #dlg-alunos td{vertical-align:top}
+  .lig-item{font-size:13px;line-height:1.45;padding:2px 0}
   dialog form{padding:20px;display:grid;gap:14px}
   dialog h2{margin:0;font-size:18px;color:var(--primary)}
   .campos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -1604,14 +1609,14 @@
       (termoDig && String(a.cpf || '').replace(/\D/g, '').includes(termoDig)));
     $('al-corpo').innerHTML = lista.length ? lista.map(a => {
       const ligs = alLigs.filter(l => l.matricula === a.matricula);
-      const ult = ligs[0];
+      const ligsHTML = ligs.length ? ligs.map(l => `<div class="lig-item"><strong>${fmtBR(l.data)} ${l.hora.slice(0,5)}</strong> · ${esc(l.resultado)}${l.observacao ? ` <span class="muted">— ${esc(l.observacao)}</span>` : ''}</div>`).join('') : '<span class="muted">Nenhuma ligação</span>';
       return `<tr>
         <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
         <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
         <td class="nowrap">${telLink(a.telefone1)}${a.telefone2 ? '<br>' + telLink(a.telefone2) : ''}</td>
         <td class="nowrap">${esc(a.situacao_matricula || '—')}</td>
         <td class="nowrap">${esc(a.situacao_pagamento || '—')}</td>
-        <td class="nowrap">${ligs.length} ${ligs.length === 1 ? 'tentativa' : 'tentativas'}${ult ? `<br><span class="muted">${fmtBR(ult.data)} ${ult.hora.slice(0,5)} · ${esc(ult.resultado)}</span>` : ''}</td>
+        <td>${ligs.length} ${ligs.length === 1 ? 'tentativa' : 'tentativas'}<div>${ligsHTML}</div></td>
         <td><button class="btn-ghost btn-small" type="button" data-lig="${a.matricula}">Ligações</button></td>
       </tr>`;
     }).join('') : `<tr><td colspan="7" class="vazio">Nenhum aluno. Importe a planilha acima.</td></tr>`;
