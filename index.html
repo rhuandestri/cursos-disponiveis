@@ -141,6 +141,7 @@
     padding:0;width:min(560px,calc(100vw - 32px));box-shadow:0 20px 50px rgba(0,0,0,.35);
   }
   dialog::backdrop{background:rgba(0,0,0,.5)}
+  #dlg-alunos,#dlg-lig{width:min(960px,96vw)}
   dialog form{padding:20px;display:grid;gap:14px}
   dialog h2{margin:0;font-size:18px;color:var(--primary)}
   .campos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -519,6 +520,81 @@
   </div>
 </dialog>
 
+<dialog id="dlg-alunos">
+  <div class="cal-box">
+    <div class="cal-topo">
+      <div>
+        <h2 id="al-titulo"></h2>
+        <p class="muted" id="al-sub"></p>
+      </div>
+      <button class="btn-ghost btn-small" type="button" id="al-fechar">Fechar</button>
+    </div>
+    <div class="campos">
+      <label class="rot">Importar planilha de matrículas (CSV)
+        <input type="file" id="al-arquivo" accept=".csv,text/csv">
+      </label>
+      <label class="rot">Buscar aluno
+        <input type="search" id="al-busca" placeholder="Nome, CPF, matrícula ou e-mail">
+      </label>
+    </div>
+    <p class="muted" id="al-msg"></p>
+    <div class="tabela-wrap">
+      <table class="hist-tabela">
+        <thead>
+          <tr><th>Matrícula / CPF</th><th>Aluno / e-mail</th><th>Telefone</th><th>Situação</th><th>Pagamento</th><th>Ligações</th><th></th></tr>
+        </thead>
+        <tbody id="al-corpo"></tbody>
+      </table>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-lig">
+  <div class="cal-box">
+    <div class="cal-topo">
+      <div>
+        <h2 id="lig-titulo"></h2>
+        <p class="muted" id="lig-sub"></p>
+      </div>
+      <button class="btn-ghost btn-small" type="button" id="lig-fechar">Fechar</button>
+    </div>
+    <form id="lig-form">
+      <div class="campos">
+        <label class="rot">Data
+          <input type="date" id="lig-data" required>
+        </label>
+        <label class="rot">Hora
+          <input type="time" id="lig-hora" required>
+        </label>
+        <label class="rot full">Resultado
+          <select id="lig-resultado" required>
+            <option>Não atendeu</option>
+            <option>Não recebe chamada</option>
+            <option>Caixa postal</option>
+            <option>Número errado</option>
+            <option>Atendeu</option>
+          </select>
+        </label>
+        <label class="rot full">Observação
+          <textarea id="lig-obs" rows="2" placeholder="Ex.: confirmou presença, pediu retorno amanhã"></textarea>
+        </label>
+      </div>
+      <p id="lig-erro" class="erro-form" hidden></p>
+      <div class="botoes-modal">
+        <button class="btn-primary" type="submit">Registrar ligação</button>
+      </div>
+    </form>
+    <div class="tabela-wrap">
+      <table class="hist-tabela">
+        <thead>
+          <tr><th>Data</th><th>Hora</th><th>Resultado</th><th>Observação</th><th></th></tr>
+        </thead>
+        <tbody id="lig-corpo"></tbody>
+      </table>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="dlg-confirm">
   <div class="cal-box">
     <h2 id="conf-titulo">Confirmar</h2>
@@ -642,13 +718,14 @@
     el.classList.toggle('erro', erro);
   }
 
-  async function api(method, query='', body, tabela = CFG.tabela){
+  async function api(method, query='', body, tabela = CFG.tabela, extra = {}){
     const headers = {
       apikey: CFG.key,
       Authorization: `Bearer ${CFG.key}`,
       'Content-Type': 'application/json'
     };
     if (method === 'POST' || method === 'PATCH') headers.Prefer = 'return=minimal';
+    Object.assign(headers, extra);
     const res = await fetch(`${CFG.url}/rest/v1/${tabela}${query}`, {
       method, headers, body: body ? JSON.stringify(body) : undefined
     });
@@ -821,6 +898,7 @@
         <td class="nowrap"><span class="badge ${prox ? classeBadge : 'enc'}">${prox ? textoBadge : '—'}</span></td>
         <td>
           <div class="acoes so-admin">
+            <button class="btn-ghost btn-small" type="button" data-alunos="${esc(c.turma)}">Alunos</button>
             <button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>
             <button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>
           </div>
@@ -1413,6 +1491,235 @@
   });
 
   $('dash-periodo').addEventListener('change', renderDashboard);
+
+  /* ---------- alunos e ligações da turma ---------- */
+  let alTurma = '';     // código da turma aberta
+  let alLista = [];     // alunos da turma
+  let alLigs = [];      // ligações da turma, da mais recente para a mais antiga
+  let ligMatricula = null;
+
+  // lê CSV (separador ; , tab ou vírgula, com aspas)
+  function parseCSV(texto){
+    texto = texto.replace(/^﻿/, '');
+    const primeira = texto.split(/\r?\n/)[0];
+    const sep = [';', '\t', ','].sort((a,b) => primeira.split(b).length - primeira.split(a).length)[0];
+    const linhas = [];
+    let linha = [], campo = '', aspas = false;
+    for (let i = 0; i < texto.length; i++){
+      const ch = texto[i];
+      if (aspas){
+        if (ch === '"' && texto[i+1] === '"'){ campo += '"'; i++; }
+        else if (ch === '"') aspas = false;
+        else campo += ch;
+      } else if (ch === '"') aspas = true;
+      else if (ch === sep){ linha.push(campo); campo = ''; }
+      else if (ch === '\n' || ch === '\r'){
+        if (ch === '\r' && texto[i+1] === '\n') i++;
+        linha.push(campo); linhas.push(linha); linha = []; campo = '';
+      } else campo += ch;
+    }
+    if (campo || linha.length){ linha.push(campo); linhas.push(linha); }
+    return linhas.filter(l => l.some(c => c.trim() !== ''));
+  }
+
+  // "dd/mm/aaaa hh:mm:ss" -> {data:'aaaa-mm-dd', ts:'aaaa-mm-ddThh:mm:ss'}
+  function dataBR(s){
+    const m = String(s || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!m) return null;
+    const data = `${m[3]}-${m[2]}-${m[1]}`;
+    return {data, ts: `${data}T${m[4] || '00'}:${m[5] || '00'}:${m[6] || '00'}`};
+  }
+  function valorNum(s){
+    const n = parseFloat(String(s || '').replace(/\./g, '').replace(',', '.'));
+    return isNaN(n) ? null : n;
+  }
+
+  // campos necessários para localizar e ligar (data de nascimento fica de fora)
+  function alunosDaPlanilha(linhas){
+    const cab = linhas[0].map(x => x.trim().toLowerCase());
+    const col = nome => cab.indexOf(nome.toLowerCase());
+    if (col('Matrícula na Turma') < 0 || col('Aluno') < 0)
+      throw new Error('A planilha precisa ter as colunas "Matrícula na Turma" e "Aluno".');
+    const get = (l, nome) => { const i = col(nome); return i < 0 ? '' : (l[i] || '').trim(); };
+    return linhas.slice(1).map(l => {
+      const matricula = parseInt(get(l, 'Matrícula na Turma'), 10);
+      if (!matricula) return null;
+      const validade = dataBR(get(l, 'Validade do Cadastro'));
+      const dmat = dataBR(get(l, 'Data da Matricula'));
+      return {
+        matricula,
+        turma: alTurma,
+        aluno: get(l, 'Aluno'),
+        cpf: get(l, 'CPF') || null,
+        email: get(l, 'E-mail') || null,
+        classificacao: get(l, 'Classificação') || null,
+        tipo_cliente: get(l, 'Tipo do Cliente') || null,
+        validade: validade ? validade.data : null,
+        situacao_matricula: get(l, 'Situação da Matrícula') || null,
+        situacao_pagamento: get(l, 'Situação do Pagamento') || null,
+        valor: valorNum(get(l, 'Valor (R$)')),
+        situacao_aluno: get(l, 'Situação do Aluno') || null,
+        telefone1: get(l, 'Telefone Preferencial') || null,
+        telefone2: get(l, 'Telefone Opcional 1') || null,
+        telefone3: get(l, 'Telefone Opcional 2') || null,
+        data_matricula: dmat ? dmat.ts : null
+      };
+    }).filter(Boolean);
+  }
+
+  async function importarAlunos(arquivo){
+    const alunos = alunosDaPlanilha(parseCSV(await arquivo.text()));
+    if (!alunos.length) throw new Error('Nenhum aluno encontrado na planilha.');
+    const existentes = new Set(alLista.map(a => a.matricula));
+    for (let i = 0; i < alunos.length; i += 200){
+      await api('POST', '', alunos.slice(i, i + 200), 'alunos', {Prefer: 'resolution=merge-duplicates,return=minimal'});
+    }
+    const novos = alunos.filter(a => !existentes.has(a.matricula)).length;
+    return {total: alunos.length, novos, atualizados: alunos.length - novos};
+  }
+
+  async function carregarAlunos(){
+    const t = encodeURIComponent(alTurma);
+    const [alunos, ligs] = await Promise.all([
+      api('GET', `?turma=eq.${t}&select=*&order=aluno.asc`, null, 'alunos'),
+      api('GET', `?turma=eq.${t}&select=*&order=data.desc,hora.desc`, null, 'ligacoes')
+    ]);
+    alLista = alunos;
+    alLigs = ligs;
+  }
+
+  function telLink(t){
+    if (!t) return '—';
+    const dig = t.replace(/\D/g, '');
+    const cel = dig.length >= 10 ? '+55' + dig : dig;
+    return `<a href="tel:${esc(cel)}">${esc(t)}</a>`;
+  }
+
+  function renderAlunos(){
+    const termo = $('al-busca').value.trim().toLowerCase();
+    const termoDig = termo.replace(/\D/g, '');
+    const lista = alLista.filter(a =>
+      !termo ||
+      `${a.aluno} ${a.matricula} ${a.email || ''}`.toLowerCase().includes(termo) ||
+      (termoDig && String(a.cpf || '').replace(/\D/g, '').includes(termoDig)));
+    $('al-corpo').innerHTML = lista.length ? lista.map(a => {
+      const ligs = alLigs.filter(l => l.matricula === a.matricula);
+      const ult = ligs[0];
+      return `<tr>
+        <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
+        <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
+        <td class="nowrap">${telLink(a.telefone1)}${a.telefone2 ? '<br>' + telLink(a.telefone2) : ''}</td>
+        <td class="nowrap">${esc(a.situacao_matricula || '—')}</td>
+        <td class="nowrap">${esc(a.situacao_pagamento || '—')}</td>
+        <td class="nowrap">${ligs.length} ${ligs.length === 1 ? 'tentativa' : 'tentativas'}${ult ? `<br><span class="muted">${fmtBR(ult.data)} ${ult.hora.slice(0,5)} · ${esc(ult.resultado)}</span>` : ''}</td>
+        <td><button class="btn-ghost btn-small" type="button" data-lig="${a.matricula}">Ligações</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="7" class="vazio">Nenhum aluno. Importe a planilha acima.</td></tr>`;
+  }
+
+  async function abrirAlunos(turma){
+    alTurma = turma;
+    const c = cursos.find(x => x.turma === turma);
+    $('al-titulo').textContent = `Alunos da turma ${turma}`;
+    $('al-sub').textContent = c ? c.curso : '';
+    $('al-busca').value = '';
+    $('al-arquivo').value = '';
+    $('al-msg').textContent = 'Carregando…';
+    $('dlg-alunos').showModal();
+    try {
+      await carregarAlunos();
+      $('al-msg').textContent = '';
+      renderAlunos();
+    } catch(err){
+      $('al-msg').textContent = 'Erro ao carregar: ' + err.message;
+    }
+  }
+
+  function renderLigacoes(){
+    const ligs = alLigs.filter(l => l.matricula === ligMatricula);
+    $('lig-corpo').innerHTML = ligs.length ? ligs.map(l => `<tr>
+        <td class="nowrap">${fmtBR(l.data)}</td>
+        <td class="nowrap">${l.hora.slice(0,5)}</td>
+        <td class="nowrap">${esc(l.resultado)}</td>
+        <td>${esc(l.observacao || '')}</td>
+        <td><button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button></td>
+      </tr>`).join('') : `<tr><td colspan="5" class="vazio">Nenhuma ligação registrada.</td></tr>`;
+  }
+
+  function abrirLigacoes(matricula){
+    ligMatricula = matricula;
+    const a = alLista.find(x => x.matricula === matricula);
+    $('lig-titulo').textContent = a ? a.aluno : String(matricula);
+    $('lig-sub').textContent = `Matrícula ${matricula} · Turma ${alTurma}`;
+    $('lig-data').value = hojeISO();
+    $('lig-hora').value = new Date().toTimeString().slice(0,5);
+    $('lig-resultado').value = 'Não atendeu';
+    $('lig-obs').value = '';
+    $('lig-erro').hidden = true;
+    renderLigacoes();
+    $('dlg-lig').showModal();
+  }
+
+  $('corpo').addEventListener('click', e => {
+    const b = e.target.closest('[data-alunos]');
+    if (b) abrirAlunos(b.dataset.alunos);
+  });
+  $('al-corpo').addEventListener('click', e => {
+    const b = e.target.closest('[data-lig]');
+    if (b) abrirLigacoes(Number(b.dataset.lig));
+  });
+  $('al-busca').addEventListener('input', renderAlunos);
+  $('al-fechar').addEventListener('click', () => $('dlg-alunos').close());
+  $('lig-fechar').addEventListener('click', () => $('dlg-lig').close());
+
+  $('al-arquivo').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    $('al-msg').textContent = 'Importando…';
+    try {
+      const r = await importarAlunos(f);
+      await carregarAlunos();
+      renderAlunos();
+      $('al-msg').textContent = `${r.total} aluno(s) lidos: ${r.novos} novo(s) e ${r.atualizados} já cadastrado(s) atualizado(s).`;
+    } catch(err){
+      $('al-msg').textContent = 'Erro ao importar: ' + err.message;
+    }
+    e.target.value = '';
+  });
+
+  $('lig-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const obs = $('lig-obs').value.trim();
+    try {
+      await api('POST', '', {
+        matricula: ligMatricula, turma: alTurma,
+        data: $('lig-data').value, hora: $('lig-hora').value,
+        resultado: $('lig-resultado').value, observacao: obs || null
+      }, 'ligacoes');
+      await carregarAlunos();
+      $('lig-obs').value = '';
+      $('lig-erro').hidden = true;
+      renderLigacoes();
+      renderAlunos();
+    } catch(err){
+      $('lig-erro').textContent = 'Erro ao registrar: ' + err.message;
+      $('lig-erro').hidden = false;
+    }
+  });
+
+  $('lig-corpo').addEventListener('click', async e => {
+    const b = e.target.closest('[data-lig-excluir]');
+    if (!b) return;
+    if (!(await perguntar('Excluir esta ligação do registro?', {titulo: 'Excluir ligação', sim: 'Excluir', perigo: true}))) return;
+    try {
+      await api('DELETE', `?id=eq.${b.dataset.ligExcluir}`, null, 'ligacoes');
+      await carregarAlunos();
+      renderLigacoes();
+      renderAlunos();
+    } catch(err){
+      setStatus('Erro ao excluir: ' + err.message, true);
+    }
+  });
 
   /* ---------- janela de confirmação ---------- */
   function perguntar(texto, {titulo = 'Confirmar', sim = 'Confirmar', perigo = false} = {}){
