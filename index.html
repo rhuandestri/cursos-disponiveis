@@ -146,7 +146,8 @@
   #dlg-alunos .tabela-wrap{overflow:visible}
   #dlg-alunos table{width:100%}
   #dlg-alunos td{vertical-align:top}
-  .lig-item{font-size:13px;line-height:1.45;padding:2px 0}
+  #dlg-aluno{width:min(640px,96vw)}
+  .al-acoes{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
   dialog form{padding:20px;display:grid;gap:14px}
   dialog h2{margin:0;font-size:18px;color:var(--primary)}
   .campos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -542,6 +543,7 @@
         <input type="search" id="al-busca" placeholder="Nome, CPF, matrícula ou e-mail">
       </label>
     </div>
+    <p><button class="btn-primary btn-small" type="button" id="al-novo">+ Adicionar aluno</button></p>
     <p class="muted" id="al-msg"></p>
     <div class="tabela-wrap">
       <table class="hist-tabela">
@@ -586,7 +588,8 @@
       </div>
       <p id="lig-erro" class="erro-form" hidden></p>
       <div class="botoes-modal">
-        <button class="btn-primary" type="submit">Registrar ligação</button>
+        <button class="btn-ghost" type="button" id="lig-cancelar-edicao" hidden>Cancelar edição</button>
+        <button class="btn-primary" type="submit" id="lig-submit">Registrar ligação</button>
       </div>
     </form>
     <div class="tabela-wrap">
@@ -598,6 +601,43 @@
       </table>
     </div>
   </div>
+</dialog>
+
+<dialog id="dlg-aluno">
+  <form id="aluno-form">
+    <h2 id="aluno-titulo">Adicionar aluno</h2>
+    <div class="campos">
+      <label class="rot">Matrícula na turma
+        <input id="af-matricula" type="number" min="1" step="1" required>
+      </label>
+      <label class="rot">Nome
+        <input id="af-aluno" required>
+      </label>
+      <label class="rot">CPF
+        <input id="af-cpf" inputmode="numeric" placeholder="com ou sem pontos">
+      </label>
+      <label class="rot">E-mail
+        <input id="af-email" type="email">
+      </label>
+      <label class="rot">Telefone preferencial
+        <input id="af-tel1">
+      </label>
+      <label class="rot">Telefone opcional
+        <input id="af-tel2">
+      </label>
+      <label class="rot">Situação da matrícula
+        <input id="af-sitmat" placeholder="ex: Confirmada">
+      </label>
+      <label class="rot">Situação do pagamento
+        <input id="af-pagto" placeholder="ex: Pago">
+      </label>
+    </div>
+    <p id="af-erro" class="erro-form" hidden></p>
+    <div class="botoes-modal">
+      <button class="btn-ghost" type="button" id="af-cancelar">Cancelar</button>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="dlg-confirm">
@@ -1608,18 +1648,21 @@
       `${a.aluno} ${a.matricula} ${a.email || ''}`.toLowerCase().includes(termo) ||
       (termoDig && String(a.cpf || '').replace(/\D/g, '').includes(termoDig)));
     $('al-corpo').innerHTML = lista.length ? lista.map(a => {
-      const ligs = alLigs.filter(l => l.matricula === a.matricula);
-      const ligsHTML = ligs.length ? ligs.map(l => `<div class="lig-item"><strong>${fmtBR(l.data)} ${l.hora.slice(0,5)}</strong> · ${esc(l.resultado)}${l.observacao ? ` <span class="muted">— ${esc(l.observacao)}</span>` : ''}</div>`).join('') : '<span class="muted">Nenhuma ligação</span>';
+      const n = alLigs.filter(l => l.matricula === a.matricula).length;
       return `<tr>
         <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
         <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
         <td class="nowrap">${telLink(a.telefone1)}${a.telefone2 ? '<br>' + telLink(a.telefone2) : ''}</td>
         <td class="nowrap">${esc(a.situacao_matricula || '—')}</td>
         <td class="nowrap">${esc(a.situacao_pagamento || '—')}</td>
-        <td>${ligs.length} ${ligs.length === 1 ? 'tentativa' : 'tentativas'}<div>${ligsHTML}</div></td>
-        <td><button class="btn-ghost btn-small" type="button" data-lig="${a.matricula}">Ligações</button></td>
+        <td class="nowrap">${n} ${n === 1 ? 'tentativa' : 'tentativas'}</td>
+        <td class="al-acoes">
+          <button class="btn-ghost btn-small" type="button" data-lig="${a.matricula}">Ligações</button>
+          <button class="btn-ghost btn-small" type="button" data-aluno-editar="${a.matricula}">Editar</button>
+          <button class="btn-danger btn-small" type="button" data-aluno-excluir="${a.matricula}">Excluir</button>
+        </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="7" class="vazio">Nenhum aluno. Importe a planilha acima.</td></tr>`;
+    }).join('') : `<tr><td colspan="7" class="vazio">Nenhum aluno. Importe a planilha ou adicione manualmente.</td></tr>`;
   }
 
   async function abrirAlunos(turma){
@@ -1640,6 +1683,89 @@
     }
   }
 
+  // ----- cadastro manual / edição / exclusão de aluno -----
+  let afMatriculaOriginal = null;   // null = novo aluno
+
+  function abrirAluno(matricula){
+    const a = matricula ? alLista.find(x => x.matricula === matricula) : null;
+    afMatriculaOriginal = a ? a.matricula : null;
+    $('aluno-titulo').textContent = a ? 'Editar aluno' : 'Adicionar aluno';
+    $('af-matricula').value = a ? a.matricula : '';
+    $('af-matricula').readOnly = !!a;
+    $('af-aluno').value = a ? a.aluno : '';
+    $('af-cpf').value = a ? (a.cpf || '') : '';
+    $('af-email').value = a ? (a.email || '') : '';
+    $('af-tel1').value = a ? (a.telefone1 || '') : '';
+    $('af-tel2').value = a ? (a.telefone2 || '') : '';
+    $('af-sitmat').value = a ? (a.situacao_matricula || '') : '';
+    $('af-pagto').value = a ? (a.situacao_pagamento || '') : '';
+    $('af-erro').hidden = true;
+    $('dlg-aluno').showModal();
+  }
+
+  $('aluno-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const erro = msg => { $('af-erro').textContent = msg; $('af-erro').hidden = false; };
+    const matricula = parseInt($('af-matricula').value, 10);
+    const nome = $('af-aluno').value.trim();
+    const cpf = $('af-cpf').value.replace(/\D/g, '');
+    if (!matricula) return erro('Informe a matrícula na turma.');
+    if (!nome) return erro('Informe o nome do aluno.');
+    if (cpf && cpf.length !== 11) return erro('O CPF precisa ter 11 números.');
+    if (!afMatriculaOriginal && alLista.some(a => a.matricula === matricula)) return erro('Essa matrícula já está cadastrada nesta turma.');
+    const dados = {
+      matricula,
+      turma: alTurma,
+      aluno: nome,
+      cpf: cpf || null,
+      email: $('af-email').value.trim() || null,
+      telefone1: $('af-tel1').value.trim() || null,
+      telefone2: $('af-tel2').value.trim() || null,
+      situacao_matricula: $('af-sitmat').value.trim() || null,
+      situacao_pagamento: $('af-pagto').value.trim() || null
+    };
+    try {
+      if (afMatriculaOriginal) await api('PATCH', `?matricula=eq.${afMatriculaOriginal}`, dados, 'alunos');
+      else await api('POST', '', dados, 'alunos');
+      $('dlg-aluno').close();
+      await carregarAlunos();
+      renderAlunos();
+      setStatus('Aluno salvo');
+    } catch(err){
+      erro('Erro ao salvar: ' + err.message);
+    }
+  });
+
+  async function excluirAluno(matricula){
+    const a = alLista.find(x => x.matricula === matricula);
+    const nLig = alLigs.filter(l => l.matricula === matricula).length;
+    const texto = `Excluir ${a ? a.aluno : matricula} da turma?` +
+      (nLig ? ` As ${nLig} ligação(ões) registradas dele também serão apagadas.` : '');
+    if (!(await perguntar(texto, {titulo: 'Excluir aluno', sim: 'Excluir', perigo: true}))) return;
+    try {
+      await api('DELETE', `?matricula=eq.${matricula}`, null, 'alunos');
+      await carregarAlunos();
+      renderAlunos();
+      setStatus('Aluno excluído');
+    } catch(err){
+      $('al-msg').textContent = 'Erro ao excluir: ' + err.message;
+    }
+  }
+
+  // ----- ligações -----
+  let ligEditandoId = null;   // null = nova ligação
+
+  function resetLigForm(){
+    ligEditandoId = null;
+    $('lig-data').value = hojeISO();
+    $('lig-hora').value = new Date().toTimeString().slice(0,5);
+    $('lig-resultado').value = 'Não atendeu';
+    $('lig-obs').value = '';
+    $('lig-erro').hidden = true;
+    $('lig-submit').textContent = 'Registrar ligação';
+    $('lig-cancelar-edicao').hidden = true;
+  }
+
   function renderLigacoes(){
     const ligs = alLigs.filter(l => l.matricula === ligMatricula);
     $('lig-corpo').innerHTML = ligs.length ? ligs.map(l => `<tr>
@@ -1647,7 +1773,10 @@
         <td class="nowrap">${l.hora.slice(0,5)}</td>
         <td class="nowrap">${esc(l.resultado)}</td>
         <td>${esc(l.observacao || '')}</td>
-        <td><button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button></td>
+        <td class="nowrap">
+          <button class="btn-ghost btn-small" type="button" data-lig-editar="${esc(l.id)}">Editar</button>
+          <button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button>
+        </td>
       </tr>`).join('') : `<tr><td colspan="5" class="vazio">Nenhuma ligação registrada.</td></tr>`;
   }
 
@@ -1656,26 +1785,46 @@
     const a = alLista.find(x => x.matricula === matricula);
     $('lig-titulo').textContent = a ? a.aluno : String(matricula);
     $('lig-sub').textContent = `Matrícula ${matricula} · Turma ${alTurma}`;
-    $('lig-data').value = hojeISO();
-    $('lig-hora').value = new Date().toTimeString().slice(0,5);
-    $('lig-resultado').value = 'Não atendeu';
-    $('lig-obs').value = '';
-    $('lig-erro').hidden = true;
+    resetLigForm();
     renderLigacoes();
     $('dlg-lig').showModal();
   }
 
+  function editarLigacao(id){
+    const l = alLigs.find(x => x.id === id);
+    if (!l) return;
+    ligEditandoId = id;
+    $('lig-data').value = l.data;
+    $('lig-hora').value = l.hora.slice(0,5);
+    $('lig-resultado').value = l.resultado;
+    $('lig-obs').value = l.observacao || '';
+    $('lig-erro').hidden = true;
+    $('lig-submit').textContent = 'Salvar alteração';
+    $('lig-cancelar-edicao').hidden = false;
+    $('lig-obs').focus();
+  }
+
+  /* ----- eventos ----- */
   $('corpo').addEventListener('click', e => {
     const b = e.target.closest('[data-alunos]');
     if (b) abrirAlunos(b.dataset.alunos);
   });
+
   $('al-corpo').addEventListener('click', e => {
-    const b = e.target.closest('[data-lig]');
-    if (b) abrirLigacoes(Number(b.dataset.lig));
+    const lig = e.target.closest('[data-lig]');
+    if (lig) return abrirLigacoes(Number(lig.dataset.lig));
+    const ed = e.target.closest('[data-aluno-editar]');
+    if (ed) return abrirAluno(Number(ed.dataset.alunoEditar));
+    const ex = e.target.closest('[data-aluno-excluir]');
+    if (ex) return excluirAluno(Number(ex.dataset.alunoExcluir));
   });
+
   $('al-busca').addEventListener('input', renderAlunos);
   $('al-fechar').addEventListener('click', () => $('dlg-alunos').close());
   $('lig-fechar').addEventListener('click', () => $('dlg-lig').close());
+  $('al-novo').addEventListener('click', () => abrirAluno(null));
+  $('af-cancelar').addEventListener('click', () => $('dlg-aluno').close());
+  $('lig-cancelar-edicao').addEventListener('click', () => resetLigForm());
 
   $('al-arquivo').addEventListener('change', async e => {
     const f = e.target.files[0];
@@ -1694,31 +1843,36 @@
 
   $('lig-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const obs = $('lig-obs').value.trim();
+    const dados = {
+      data: $('lig-data').value,
+      hora: $('lig-hora').value,
+      resultado: $('lig-resultado').value,
+      observacao: $('lig-obs').value.trim() || null
+    };
     try {
-      await api('POST', '', {
-        matricula: ligMatricula, turma: alTurma,
-        data: $('lig-data').value, hora: $('lig-hora').value,
-        resultado: $('lig-resultado').value, observacao: obs || null
-      }, 'ligacoes');
+      if (ligEditandoId) await api('PATCH', `?id=eq.${ligEditandoId}`, dados, 'ligacoes');
+      else await api('POST', '', {...dados, matricula: ligMatricula, turma: alTurma}, 'ligacoes');
       await carregarAlunos();
-      $('lig-obs').value = '';
-      $('lig-erro').hidden = true;
+      resetLigForm();
       renderLigacoes();
       renderAlunos();
     } catch(err){
-      $('lig-erro').textContent = 'Erro ao registrar: ' + err.message;
+      $('lig-erro').textContent = 'Erro ao salvar: ' + err.message;
       $('lig-erro').hidden = false;
     }
   });
 
   $('lig-corpo').addEventListener('click', async e => {
-    const b = e.target.closest('[data-lig-excluir]');
-    if (!b) return;
+    const ed = e.target.closest('[data-lig-editar]');
+    if (ed) return editarLigacao(ed.dataset.ligEditar);
+    const ex = e.target.closest('[data-lig-excluir]');
+    if (!ex) return;
     if (!(await perguntar('Excluir esta ligação do registro?', {titulo: 'Excluir ligação', sim: 'Excluir', perigo: true}))) return;
+    const id = ex.dataset.ligExcluir;
     try {
-      await api('DELETE', `?id=eq.${b.dataset.ligExcluir}`, null, 'ligacoes');
+      await api('DELETE', `?id=eq.${id}`, null, 'ligacoes');
       await carregarAlunos();
+      if (ligEditandoId === id) resetLigForm();
       renderLigacoes();
       renderAlunos();
     } catch(err){
