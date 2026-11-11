@@ -1753,7 +1753,7 @@
     return `<select class="sit-sel" data-sit="${chaveSituacao(n)}" ${attrs}>${opcoes.map(o =>
       `<option value="${esc(o)}" ${o === n ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   }
-  function badgeSituacao(atual){
+  function badgeSituacaoAluno(atual){
     const n = normalizaSituacao(atual);
     if (!n) return '<span class="muted">—</span>';
     return `<span class="sit-badge ${chaveSituacao(n)}">${esc(n)}</span>`;
@@ -2064,7 +2064,7 @@
         <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
         <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
         <td>${esc(a.turma)}<br><span class="muted">${esc(c ? c.curso : '')}</span></td>
-        <td class="nowrap">${badgeSituacao(a.situacao_matricula)}<br><span class="muted">${esc(a.situacao_pagamento || '')}</span></td>
+        <td class="nowrap">${badgeSituacaoAluno(a.situacao_matricula)}<br><span class="muted">${esc(a.situacao_pagamento || '')}</span></td>
         <td class="nowrap">${n} ${n === 1 ? 'tentativa' : 'tentativas'}</td>
         <td><button class="btn-ghost btn-small" type="button" data-busca-abrir="${a.matricula}" data-turma="${esc(a.turma)}">Abrir ficha</button></td>
       </tr>`;
