@@ -149,6 +149,16 @@
   #dlg-aluno{width:min(640px,96vw)}
   #dlg-busca{width:min(1100px,96vw)}
   #dlg-espera{width:min(680px,96vw)}
+  .sit-sel{font-weight:600;font-size:13px;border-radius:999px;padding:4px 10px;border:1px solid transparent;cursor:pointer}
+  .sit-sel[data-sit="pre"]{background:#fff1c2;color:#7a5100;border-color:#f0cf6a}
+  .sit-sel[data-sit="ok"]{background:#d9f2e3;color:#1d6b3a;border-color:#9fd8b5}
+  .sit-sel[data-sit="canc"]{background:#fde2e0;color:#a4281c;border-color:#f1a7a0}
+  .sit-sel[data-sit="outra"]{background:rgba(127,127,127,.15)}
+  .sit-badge{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap}
+  .sit-badge.pre{background:#fff1c2;color:#7a5100}
+  .sit-badge.ok{background:#d9f2e3;color:#1d6b3a}
+  .sit-badge.canc{background:#fde2e0;color:#a4281c}
+  .sit-badge.outra{background:rgba(127,127,127,.15)}
   .espera-filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}
   .espera-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
   .espera-filtros input,.espera-filtros select{min-width:180px}
@@ -664,7 +674,11 @@
         <input id="af-tel2">
       </label>
       <label class="rot">Situação da matrícula
-        <input id="af-sitmat" placeholder="ex: Confirmada">
+        <select id="af-sitmat">
+          <option>Pré-Matrícula</option>
+          <option>Confirmada</option>
+          <option>Cancelada</option>
+        </select>
       </label>
       <label class="rot">Situação do pagamento
         <input id="af-pagto" placeholder="ex: Pago">
@@ -1680,7 +1694,7 @@
         classificacao: get(l, 'Classificação') || null,
         tipo_cliente: get(l, 'Tipo do Cliente') || null,
         validade: validade ? validade.data : null,
-        situacao_matricula: get(l, 'Situação da Matrícula') || null,
+        situacao_matricula: normalizaSituacao(get(l, 'Situação da Matrícula')),
         situacao_pagamento: get(l, 'Situação do Pagamento') || null,
         valor: valorNum(get(l, 'Valor (R$)')),
         situacao_aluno: get(l, 'Situação do Aluno') || null,
@@ -1720,6 +1734,31 @@
     return `<a href="tel:${esc(cel)}">${esc(t)}</a>`;
   }
 
+  // situação da matrícula do aluno: Pré-Matrícula, Confirmada ou Cancelada
+  const SITUACOES_ALUNO = ['Pré-Matrícula', 'Confirmada', 'Cancelada'];
+  function normalizaSituacao(v){
+    const t = String(v || '').trim().toLowerCase();
+    if (!t) return null;
+    if (t.startsWith('pré') || t.startsWith('pre')) return 'Pré-Matrícula';
+    if (t.startsWith('confirm')) return 'Confirmada';
+    if (t.startsWith('cancel')) return 'Cancelada';
+    return String(v).trim();
+  }
+  function chaveSituacao(n){
+    return n === 'Pré-Matrícula' ? 'pre' : n === 'Confirmada' ? 'ok' : n === 'Cancelada' ? 'canc' : 'outra';
+  }
+  function selectSituacao(atual, attrs){
+    const n = normalizaSituacao(atual) || 'Pré-Matrícula';
+    const opcoes = SITUACOES_ALUNO.includes(n) ? SITUACOES_ALUNO : [...SITUACOES_ALUNO, n];
+    return `<select class="sit-sel" data-sit="${chaveSituacao(n)}" ${attrs}>${opcoes.map(o =>
+      `<option value="${esc(o)}" ${o === n ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  }
+  function badgeSituacao(atual){
+    const n = normalizaSituacao(atual);
+    if (!n) return '<span class="muted">—</span>';
+    return `<span class="sit-badge ${chaveSituacao(n)}">${esc(n)}</span>`;
+  }
+
   function renderAlunos(){
     const termo = $('al-busca').value.trim().toLowerCase();
     const termoDig = termo.replace(/\D/g, '');
@@ -1733,7 +1772,7 @@
         <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
         <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
         <td class="nowrap">${telLink(a.telefone1)}${a.telefone2 ? '<br>' + telLink(a.telefone2) : ''}</td>
-        <td class="nowrap">${esc(a.situacao_matricula || '—')}</td>
+        <td>${selectSituacao(a.situacao_matricula, `data-aluno-sit="${a.matricula}"`)}</td>
         <td class="nowrap">${esc(a.situacao_pagamento || '—')}</td>
         <td class="nowrap">${n} ${n === 1 ? 'tentativa' : 'tentativas'}</td>
         <td class="al-acoes">
@@ -1777,7 +1816,7 @@
     $('af-email').value = a ? (a.email || '') : '';
     $('af-tel1').value = a ? (a.telefone1 || '') : '';
     $('af-tel2').value = a ? (a.telefone2 || '') : '';
-    $('af-sitmat').value = a ? (a.situacao_matricula || '') : '';
+    $('af-sitmat').value = a ? (normalizaSituacao(a.situacao_matricula) || 'Pré-Matrícula') : 'Pré-Matrícula';
     $('af-pagto').value = a ? (a.situacao_pagamento || '') : '';
     $('af-erro').hidden = true;
     $('dlg-aluno').showModal();
@@ -1912,6 +1951,20 @@
   });
 
   $('al-busca').addEventListener('input', renderAlunos);
+
+  $('al-corpo').addEventListener('change', async e => {
+    const sel = e.target.closest('[data-aluno-sit]');
+    if (!sel) return;
+    try {
+      await api('PATCH', `?matricula=eq.${sel.dataset.alunoSit}`, {situacao_matricula: sel.value}, 'alunos');
+      await carregarAlunos();
+      renderAlunos();
+      setStatus('Situação do aluno atualizada');
+    } catch(err){
+      setStatus('Erro ao atualizar: ' + err.message, true);
+      renderAlunos();
+    }
+  });
   $('al-fechar').addEventListener('click', () => $('dlg-alunos').close());
   $('lig-fechar').addEventListener('click', () => $('dlg-lig').close());
   $('al-novo').addEventListener('click', () => abrirAluno(null));
@@ -2011,7 +2064,7 @@
         <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
         <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
         <td>${esc(a.turma)}<br><span class="muted">${esc(c ? c.curso : '')}</span></td>
-        <td class="nowrap">${esc(a.situacao_matricula || '—')}<br><span class="muted">${esc(a.situacao_pagamento || '')}</span></td>
+        <td class="nowrap">${badgeSituacao(a.situacao_matricula)}<br><span class="muted">${esc(a.situacao_pagamento || '')}</span></td>
         <td class="nowrap">${n} ${n === 1 ? 'tentativa' : 'tentativas'}</td>
         <td><button class="btn-ghost btn-small" type="button" data-busca-abrir="${a.matricula}" data-turma="${esc(a.turma)}">Abrir ficha</button></td>
       </tr>`;
