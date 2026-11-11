@@ -406,6 +406,7 @@
 
 <section id="aba-real" class="dash" hidden>
   <div class="cal-filtros" id="outras-chips" style="margin-bottom:12px">
+    <button type="button" data-tipo="todas" aria-pressed="false">Todas</button>
     <button type="button" data-tipo="andamento" aria-pressed="true">Em andamento</button>
     <button type="button" data-tipo="canceladas" aria-pressed="false">Canceladas</button>
     <button type="button" data-tipo="realizadas" aria-pressed="false">Realizadas</button>
@@ -567,6 +568,9 @@
     </div>
     <form id="lig-form">
       <div class="campos">
+        <label class="rot full">Quem ligou
+          <input id="lig-operador" required placeholder="seu nome">
+        </label>
         <label class="rot">Data
           <input type="date" id="lig-data" required>
         </label>
@@ -595,7 +599,7 @@
     <div class="tabela-wrap">
       <table class="hist-tabela">
         <thead>
-          <tr><th>Data</th><th>Hora</th><th>Resultado</th><th>Observação</th><th></th></tr>
+          <tr><th>Data</th><th>Hora</th><th>Resultado</th><th>Quem ligou</th><th>Observação</th><th></th></tr>
         </thead>
         <tbody id="lig-corpo"></tbody>
       </table>
@@ -636,6 +640,21 @@
     <div class="botoes-modal">
       <button class="btn-ghost" type="button" id="af-cancelar">Cancelar</button>
       <button class="btn-primary" type="submit">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-nome">
+  <form id="nome-form">
+    <h2 id="nome-titulo">Confirmar</h2>
+    <p id="nome-texto" class="muted"></p>
+    <label class="rot">Seu nome
+      <input id="nome-input" required autocomplete="name">
+    </label>
+    <p id="nome-erro" class="erro-form" hidden></p>
+    <div class="botoes-modal">
+      <button class="btn-ghost" type="button" id="nome-cancelar">Voltar</button>
+      <button class="btn-primary" type="submit" id="nome-ok">Confirmar</button>
     </div>
   </form>
 </dialog>
@@ -792,13 +811,13 @@
 
   async function recarregar(){
     if (usaRemoto()){
-      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta', inscritos: r.inscritos || 0, modalidade: r.modalidade || 'presencial'}));
+      cursos = (await api('GET', '?select=*&order=created_at.asc')).map(r => ({id: r.id, turma: r.turma, curso: r.curso, horario: r.horario, datas: r.datas, situacao: r.situacao || 'aberta', inscritos: r.inscritos || 0, modalidade: r.modalidade || 'presencial', cancelada_por: r.cancelada_por || null}));
     } else {
       cursos = carregarLocal();
     }
   }
 
-  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao','inscritos','modalidade'];
+  const CAMPOS_TURMA = ['turma','curso','horario','datas','situacao','inscritos','modalidade','cancelada_por'];
 
   function descreverMudancas(antes, depois){
     const partes = [];
@@ -881,7 +900,7 @@
   /* ---------- tabela ---------- */
   function dadosDe(c){
     return {turma: c.turma, curso: c.curso, horario: c.horario, datas: c.datas,
-            situacao: c.situacao || 'aberta', inscritos: c.inscritos || 0, modalidade: c.modalidade || 'presencial'};
+            situacao: c.situacao || 'aberta', inscritos: c.inscritos || 0, modalidade: c.modalidade || 'presencial', cancelada_por: c.cancelada_por || null};
   }
 
   function inscritosHTML(c){
@@ -1002,7 +1021,7 @@
     $('f-curso').value = c ? c.curso : '';
     $('f-horario').value = c ? c.horario : '';
     $('f-modalidade').value = c ? (c.modalidade || 'presencial') : modalAba;
-    $('f-situacao').value = c && c.situacao === 'cheia' ? 'cheia' : 'aberta';
+    $('f-situacao').value = c && (c.situacao === 'cheia' || c.situacao === 'cancelada') ? c.situacao : 'aberta';
     $('f-inscritos').value = c ? (c.inscritos || 0) : 0;
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
     $('f-erro').hidden = true;
@@ -1039,7 +1058,17 @@
 
     $('btn-salvar').disabled = true;
     try {
-      await gravar({turma, curso, horario, datas, situacao, inscritos, modalidade}, editandoId);
+      const eraCancelada = !!editandoId && cursos.find(x => x.id === editandoId)?.situacao === 'cancelada';
+      let extra = {cancelada_por: null};
+      if (situacao === 'cancelada'){
+        if (eraCancelada) extra = {};
+        else {
+          const nome = await pedirNome({titulo: 'Cancelar turma', texto: `Turma ${turma} · ${curso}. Informe seu nome para registrar quem cancelou.`, botao: 'Cancelar turma', perigo: true});
+          if (!nome) return;
+          extra = {cancelada_por: nome};
+        }
+      }
+      await gravar({turma, curso, horario, datas, situacao, inscritos, modalidade, ...extra}, editandoId);
       $('dlg').close();
       render();
       renderOutras();
@@ -1072,9 +1101,8 @@
       const c = cursos.find(x => x.id === btnSit.dataset.situacao);
       if (!c) return;
       if (statusTurma(c) === 'andamento'){
-        if (!(await perguntar(`Cancelar a turma ${c.turma} (${c.curso})? Ela já começou e vai sair da lista de turmas ativas.`, {titulo: 'Cancelar turma em andamento', sim: 'Cancelar turma', perigo: true}))) return;
         try {
-          await gravar({...dadosDe(c), situacao: 'cancelada'}, c.id);
+          if (!(await cancelarTurma(c))) return;
           render();
           setStatus(`Turma ${c.turma} cancelada`);
         } catch(err){
@@ -1084,7 +1112,8 @@
       }
       const nova = {aberta: 'cheia', cheia: 'cancelada', cancelada: 'aberta'}[c.situacao || 'aberta'];
       try {
-        await gravar({...dadosDe(c), situacao: nova}, c.id);
+        if (nova === 'cancelada'){ if (!(await cancelarTurma(c))) return; }
+        else await gravar({...dadosDe(c), situacao: nova, cancelada_por: null}, c.id);
         render();
         setStatus(`Turma ${c.turma} marcada como ${nova}`);
       } catch(err){
@@ -1325,6 +1354,11 @@
 
   let outrasTipo = 'andamento';
   const OUTRAS = {
+    todas: {
+      titulo: 'Todas',
+      filtro: c => !naListaPrincipal(c),
+      ordem: (a, b) => primeiraData(a).localeCompare(primeiraData(b))
+    },
     andamento: {
       titulo: 'Em andamento',
       filtro: c => statusTurma(c) === 'andamento',
@@ -1348,6 +1382,7 @@
     const botoes = [];
     if (s === 'andamento') botoes.push(`<button class="btn-danger btn-small" type="button" data-acao="cancelar" data-id="${esc(c.id)}">Cancelar turma</button>`);
     if (canc && s !== 'passada') botoes.push(`<button class="btn-ghost btn-small" type="button" data-acao="reabrir" data-id="${esc(c.id)}">Reabrir</button>`);
+    botoes.push(`<button class="btn-ghost btn-small" type="button" data-alunos="${esc(c.turma)}">Alunos</button>`);
     botoes.push(`<button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>`);
     botoes.push(`<button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>`);
     return botoes.join('');
@@ -1366,7 +1401,7 @@
       const ini = primeiraData(c), fim = ultimaData(c);
       const periodo = ini === fim ? fmtBR(ini) : `${fmtBR(ini)} a ${fmtBR(fim)}`;
       const canc = c.situacao === 'cancelada';
-      const rotulo = canc ? 'Cancelada' : statusTurma(c) === 'andamento' ? 'Em andamento' : 'Realizada';
+      const rotulo = canc ? `Cancelada${c.cancelada_por ? ' por ' + esc(c.cancelada_por) : ''}` : statusTurma(c) === 'andamento' ? 'Em andamento' : 'Realizada';
       return `
         <tr class="${canc ? 'cancelada' : ''}">
           <td class="nowrap">${periodo}</td>
@@ -1395,10 +1430,9 @@
         if (!(await perguntar(`Excluir ${c.curso} (turma ${c.turma})? Esta ação não pode ser desfeita.`, {titulo: 'Excluir turma', sim: 'Excluir', perigo: true}))) return;
         await excluir(c.id);
       } else if (btn.dataset.acao === 'cancelar'){
-        if (!(await perguntar(`Cancelar a turma ${c.turma} (${c.curso})? Ela sai da lista de turmas em andamento.`, {titulo: 'Cancelar turma', sim: 'Cancelar turma', perigo: true}))) return;
-        await gravar({...dadosDe(c), situacao: 'cancelada'}, c.id);
+        if (!(await cancelarTurma(c))) return;
       } else if (btn.dataset.acao === 'reabrir'){
-        await gravar({...dadosDe(c), situacao: 'aberta'}, c.id);
+        await gravar({...dadosDe(c), situacao: 'aberta', cancelada_por: null}, c.id);
       }
       render();
       renderOutras();
@@ -1415,6 +1449,10 @@
     renderOutras();
   });
   $('busca-real').addEventListener('input', renderOutras);
+  $('real-corpo').addEventListener('click', e => {
+    const b = e.target.closest('[data-alunos]');
+    if (b) abrirAlunos(b.dataset.alunos);
+  });
 
   function mostrarAba(nome){
     const ehLista = nome === 'lista' || nome === 'web';
@@ -1755,8 +1793,16 @@
   // ----- ligações -----
   let ligEditandoId = null;   // null = nova ligação
 
+  function lerUltimoNome(){
+    try { return localStorage.getItem('ultimo_nome') || ''; } catch(e){ return ''; }
+  }
+  function salvarUltimoNome(nome){
+    try { localStorage.setItem('ultimo_nome', nome); } catch(e){}
+  }
+
   function resetLigForm(){
     ligEditandoId = null;
+    $('lig-operador').value = lerUltimoNome();
     $('lig-data').value = hojeISO();
     $('lig-hora').value = new Date().toTimeString().slice(0,5);
     $('lig-resultado').value = 'Não atendeu';
@@ -1772,12 +1818,13 @@
         <td class="nowrap">${fmtBR(l.data)}</td>
         <td class="nowrap">${l.hora.slice(0,5)}</td>
         <td class="nowrap">${esc(l.resultado)}</td>
+        <td class="nowrap">${esc(l.operador || '—')}</td>
         <td>${esc(l.observacao || '')}</td>
         <td class="nowrap">
           <button class="btn-ghost btn-small" type="button" data-lig-editar="${esc(l.id)}">Editar</button>
           <button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button>
         </td>
-      </tr>`).join('') : `<tr><td colspan="5" class="vazio">Nenhuma ligação registrada.</td></tr>`;
+      </tr>`).join('') : `<tr><td colspan="6" class="vazio">Nenhuma ligação registrada.</td></tr>`;
   }
 
   function abrirLigacoes(matricula){
@@ -1794,6 +1841,7 @@
     const l = alLigs.find(x => x.id === id);
     if (!l) return;
     ligEditandoId = id;
+    $('lig-operador').value = l.operador || '';
     $('lig-data').value = l.data;
     $('lig-hora').value = l.hora.slice(0,5);
     $('lig-resultado').value = l.resultado;
@@ -1843,7 +1891,15 @@
 
   $('lig-form').addEventListener('submit', async e => {
     e.preventDefault();
+    const operador = $('lig-operador').value.trim();
+    if (!operador){
+      $('lig-erro').textContent = 'Informe quem ligou.';
+      $('lig-erro').hidden = false;
+      return;
+    }
+    salvarUltimoNome(operador);
     const dados = {
+      operador,
       data: $('lig-data').value,
       hora: $('lig-hora').value,
       resultado: $('lig-resultado').value,
@@ -1879,6 +1935,48 @@
       setStatus('Erro ao excluir: ' + err.message, true);
     }
   });
+
+  /* ---------- nome de quem faz a ação ---------- */
+  function pedirNome({titulo, texto, botao = 'Confirmar', perigo = false}){
+    return new Promise(resolve => {
+      $('nome-titulo').textContent = titulo;
+      $('nome-texto').textContent = texto;
+      $('nome-ok').textContent = botao;
+      $('nome-ok').className = perigo ? 'btn-danger' : 'btn-primary';
+      $('nome-input').value = lerUltimoNome();
+      $('nome-erro').hidden = true;
+      const dlg = $('dlg-nome');
+      const fechar = valor => { dlg.close(); resolve(valor); };
+      $('nome-form').onsubmit = e => {
+        e.preventDefault();
+        const nome = $('nome-input').value.trim();
+        if (!nome){
+          $('nome-erro').textContent = 'Informe o seu nome.';
+          $('nome-erro').hidden = false;
+          return;
+        }
+        salvarUltimoNome(nome);
+        fechar(nome);
+      };
+      $('nome-cancelar').onclick = () => fechar(null);
+      dlg.addEventListener('close', () => resolve(null), {once: true});
+      dlg.showModal();
+      $('nome-input').focus();
+    });
+  }
+
+  // cancela a turma registrando quem cancelou; retorna false se a pessoa desistir
+  async function cancelarTurma(c){
+    const nome = await pedirNome({
+      titulo: 'Cancelar turma',
+      texto: `Turma ${c.turma} · ${c.curso}. Informe seu nome para registrar quem cancelou.`,
+      botao: 'Cancelar turma',
+      perigo: true
+    });
+    if (!nome) return false;
+    await gravar({...dadosDe(c), situacao: 'cancelada', cancelada_por: nome}, c.id);
+    return true;
+  }
 
   /* ---------- janela de confirmação ---------- */
   function perguntar(texto, {titulo = 'Confirmar', sim = 'Confirmar', perigo = false} = {}){
