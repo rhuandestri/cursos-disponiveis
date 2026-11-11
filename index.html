@@ -342,6 +342,8 @@
         <button class="btn-ghost" id="btn-mais" type="button" aria-haspopup="true" aria-expanded="false">Mais ▾</button>
         <div class="menu-lista" id="menu-mais" hidden>
           <button type="button" id="btn-imprimir">Imprimir</button>
+          <button type="button" id="btn-copiar-turmas">Copiar turmas</button>
+          <button type="button" id="btn-atualizar-todos">Atualizar todos os cursos</button>
           <button type="button" id="btn-backup">Baixar backup</button>
         </div>
       </div>
@@ -569,6 +571,33 @@
     <div class="botoes-modal">
       <button class="btn-ghost" type="button" id="cal-filtrar">Mostrar só este curso na lista</button>
     </div>
+  </div>
+</dialog>
+
+<dialog id="dlg-atualizar">
+  <div class="cal-box">
+    <div class="cal-topo">
+      <div>
+        <h2>Atualizar todos os cursos</h2>
+        <p class="muted">Selecione os arquivos baixados do SIGOP (um por turma). A turma é reconhecida pelo código no nome do arquivo, ex.: 718.953.csv.</p>
+      </div>
+      <button class="btn-ghost btn-small" type="button" id="at-fechar">Fechar</button>
+    </div>
+    <div class="campos">
+      <label class="rot">Arquivos das turmas
+        <input type="file" id="at-arquivos" accept=".csv,text/csv" multiple>
+      </label>
+    </div>
+    <div class="tabela-wrap">
+      <table class="hist-tabela">
+        <thead>
+          <tr><th>Arquivo</th><th>Turma</th><th>Alunos lidos</th></tr>
+        </thead>
+        <tbody id="at-corpo"></tbody>
+      </table>
+    </div>
+    <p class="muted" id="at-msg"></p>
+    <p><button class="btn-primary btn-small" type="button" id="at-salvar" disabled>Atualizar alunos</button></p>
   </div>
 </dialog>
 
@@ -1544,6 +1573,109 @@
     if (!e.target.closest('.menu-mais')) $('menu-mais').hidden = true;
   });
 
+  /* ---------- copiar turmas / atualizar todos os cursos ---------- */
+  function turmasAtivas(){
+    return cursos
+      .filter(c => { const s = statusTurma(c); return s !== 'cancelada' && s !== 'passada'; })
+      .map(c => c.turma)
+      .filter(Boolean);
+  }
+  async function copiarTurmas(){
+    const lista = turmasAtivas();
+    if (!lista.length){ setStatus('Nenhuma turma ativa para copiar.', true); return; }
+    const texto = lista.join('\n');
+    try {
+      await navigator.clipboard.writeText(texto);
+    } catch(err){
+      const ta = document.createElement('textarea');
+      ta.value = texto;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    setStatus(`${lista.length} turma(s) copiadas. Cole na caixa do Tampermonkey.`);
+  }
+  $('btn-copiar-turmas').addEventListener('click', copiarTurmas);
+
+  // acha a turma pelo código no nome do arquivo (ex.: "718.953.csv"); null se achar zero ou mais de uma
+  function turmaDoArquivo(nome){
+    const base = nome.replace(/\.(csv|txt)$/i, '');
+    const escRe = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const achadas = [...new Set(cursos.map(c => c.turma).filter(Boolean))].filter(t =>
+      new RegExp('(^|\\D)' + escRe(t) + '(?!\\d)').test(base));
+    return achadas.length === 1 ? achadas[0] : null;
+  }
+
+  let pacotesAtualizar = [];
+  function renderPreviaAtualizar(){
+    const validos = pacotesAtualizar.filter(p => p.turma && !p.erro && p.alunos.length);
+    $('at-corpo').innerHTML = pacotesAtualizar.map(p => {
+      const problema = p.erro ? p.erro : !p.turma ? 'Turma não reconhecida no nome do arquivo' : !p.alunos.length ? 'Nenhum aluno na planilha' : null;
+      return `<tr>
+        <td>${esc(p.arquivo.name)}</td>
+        <td class="nowrap">${p.turma ? esc(p.turma) : '—'}</td>
+        <td>${problema ? `<span class="sit-badge canc">${esc(problema)}</span>` : p.alunos.length}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="3" class="vazio">Nenhum arquivo selecionado.</td></tr>`;
+    $('at-salvar').disabled = !validos.length;
+    $('at-msg').textContent = pacotesAtualizar.length
+      ? `${validos.length} de ${pacotesAtualizar.length} arquivo(s) prontos para gravar.`
+      : '';
+  }
+
+  function abrirAtualizarTodos(){
+    pacotesAtualizar = [];
+    $('at-arquivos').value = '';
+    renderPreviaAtualizar();
+    $('dlg-atualizar').showModal();
+  }
+  $('btn-atualizar-todos').addEventListener('click', abrirAtualizarTodos);
+  $('at-fechar').addEventListener('click', () => $('dlg-atualizar').close());
+
+  $('at-arquivos').addEventListener('change', async e => {
+    const arquivos = [...e.target.files];
+    $('at-msg').textContent = 'Lendo arquivos…';
+    pacotesAtualizar = [];
+    for (const arquivo of arquivos){
+      const turma = turmaDoArquivo(arquivo.name);
+      const pacote = {arquivo, turma, alunos: [], erro: ''};
+      try {
+        pacote.alunos = alunosDaPlanilha(parseCSV(await arquivo.text()), turma || '');
+      } catch(err){
+        pacote.erro = err.message;
+      }
+      pacotesAtualizar.push(pacote);
+    }
+    renderPreviaAtualizar();
+  });
+
+  $('at-salvar').addEventListener('click', async () => {
+    const validos = pacotesAtualizar.filter(p => p.turma && !p.erro && p.alunos.length);
+    if (!validos.length) return;
+    const turmas = validos.map(p => p.turma).join(', ');
+    if (!(await perguntar(`Atualizar ${validos.length} turma(s) (${turmas})? Alunos já cadastrados serão atualizados com os dados da planilha.`, {titulo: 'Atualizar todos os cursos', sim: 'Atualizar'}))) return;
+
+    $('at-salvar').disabled = true;
+    const linhas = [];
+    for (const p of validos){
+      $('at-msg').textContent = `Gravando turma ${p.turma}…`;
+      try {
+        const existentes = new Set((await api('GET', `?turma=eq.${encodeURIComponent(p.turma)}&select=matricula`, null, 'alunos')).map(a => a.matricula));
+        const novos = p.alunos.filter(a => !existentes.has(a.matricula)).length;
+        for (let i = 0; i < p.alunos.length; i += 200){
+          await api('POST', '', p.alunos.slice(i, i + 200), 'alunos', {Prefer: 'resolution=merge-duplicates,return=minimal'});
+        }
+        linhas.push(`${p.turma}: ${p.alunos.length} lido(s), ${novos} novo(s), ${p.alunos.length - novos} atualizado(s)`);
+      } catch(err){
+        linhas.push(`${p.turma}: erro ao gravar (${err.message})`);
+      }
+    }
+    $('at-msg').innerHTML = linhas.map(esc).join('<br>');
+    $('at-salvar').disabled = false;
+    setStatus('Atualização dos cursos concluída');
+  });
+
   /* ---------- histórico ---------- */
   async function carregarHistorico(){
     const corpo = $('hist-corpo');
@@ -1674,7 +1806,7 @@
   }
 
   // campos necessários para localizar e ligar (data de nascimento fica de fora)
-  function alunosDaPlanilha(linhas){
+  function alunosDaPlanilha(linhas, turma){
     const cab = linhas[0].map(x => x.trim().toLowerCase());
     const col = nome => cab.indexOf(nome.toLowerCase());
     if (col('Matrícula na Turma') < 0 || col('Aluno') < 0)
@@ -1687,7 +1819,7 @@
       const dmat = dataBR(get(l, 'Data da Matricula'));
       return {
         matricula,
-        turma: alTurma,
+        turma,
         aluno: get(l, 'Aluno'),
         cpf: get(l, 'CPF') || null,
         email: get(l, 'E-mail') || null,
@@ -1707,7 +1839,7 @@
   }
 
   async function importarAlunos(arquivo){
-    const alunos = alunosDaPlanilha(parseCSV(await arquivo.text()));
+    const alunos = alunosDaPlanilha(parseCSV(await arquivo.text()), alTurma);
     if (!alunos.length) throw new Error('Nenhum aluno encontrado na planilha.');
     const existentes = new Set(alLista.map(a => a.matricula));
     for (let i = 0; i < alunos.length; i += 200){
