@@ -148,21 +148,25 @@
   #dlg-alunos td{vertical-align:top}
   #dlg-aluno{width:min(640px,96vw)}
   #dlg-busca{width:min(1100px,96vw)}
+  .menu-mais{position:relative;display:inline-block}
+  .menu-lista{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px}
+  .menu-lista[hidden]{display:none}
+  .menu-lista button{background:transparent;color:var(--text);text-align:left;padding:8px 10px;border-radius:6px;font-size:14px}
+  .menu-lista button:hover{background:var(--accent-soft)}
   .res-rapidos{display:flex;flex-wrap:wrap;gap:8px}
-  .lig-timeline{display:none;flex-direction:column;gap:10px}
   .lig-evento{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:10px 12px;border:1px solid rgba(127,127,127,.25);border-radius:10px}
   .lig-evento .lig-data{display:flex;flex-direction:column;gap:2px}
   .lig-evento p{margin:6px 0 0;font-size:14px}
   .lig-evento .lig-acoes{display:flex;gap:6px;margin-top:8px}
   .lig-selo{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:rgba(127,127,127,.18)}
   .lig-selo.ok{background:#d9f2e3;color:#1d6b3a}
-  body.visual-novo #lig-tabela-wrap{display:none}
-  body.visual-novo .lig-timeline{display:flex}
-  body.visual-novo #corpo tr[data-st="aberta"] td:first-child{box-shadow:inset 4px 0 0 #2e9e5b}
-  body.visual-novo #corpo tr[data-st="cheia"] td:first-child{box-shadow:inset 4px 0 0 #d9a406}
-  body.visual-novo #real-corpo tr[data-st="andamento"] td:first-child{box-shadow:inset 4px 0 0 #2b74c9}
-  body.visual-novo #real-corpo tr[data-st="cancelada"] td:first-child{box-shadow:inset 4px 0 0 #c0392b}
-  body.visual-novo #real-corpo tr[data-st="passada"] td:first-child{box-shadow:inset 4px 0 0 #8a8a8a}
+  #lig-tabela-wrap{display:none}
+  .lig-timeline{display:flex}
+  #corpo tr[data-st="aberta"] td:first-child{box-shadow:inset 4px 0 0 #2e9e5b}
+  #corpo tr[data-st="cheia"] td:first-child{box-shadow:inset 4px 0 0 #d9a406}
+  #real-corpo tr[data-st="andamento"] td:first-child{box-shadow:inset 4px 0 0 #2b74c9}
+  #real-corpo tr[data-st="cancelada"] td:first-child{box-shadow:inset 4px 0 0 #c0392b}
+  #real-corpo tr[data-st="passada"] td:first-child{box-shadow:inset 4px 0 0 #8a8a8a}
   .al-acoes{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
   dialog form{padding:20px;display:grid;gap:14px}
   dialog h2{margin:0;font-size:18px;color:var(--primary)}
@@ -320,9 +324,13 @@
       <button class="btn-ghost" id="btn-tema" type="button" aria-label="Alternar modo claro e escuro">🌙 Escuro</button>
       <button class="btn-ghost" id="btn-buscar-aluno" type="button">Buscar aluno</button>
       <button class="btn-primary so-admin" id="btn-novo" type="button">+ Nova turma</button>
-      <button class="btn-ghost" id="btn-imprimir" type="button">Imprimir</button>
-      <button class="btn-ghost" id="btn-visual" type="button">Testar visual novo</button>
-      <button class="btn-ghost" id="btn-backup" type="button">Baixar backup</button>
+      <div class="menu-mais">
+        <button class="btn-ghost" id="btn-mais" type="button" aria-haspopup="true" aria-expanded="false">Mais ▾</button>
+        <div class="menu-lista" id="menu-mais" hidden>
+          <button type="button" id="btn-imprimir">Imprimir</button>
+          <button type="button" id="btn-backup">Baixar backup</button>
+        </div>
+      </div>
       <span class="credito">Desenvolvido por: Rhuan / Camila</span>
     </div>
   </header>
@@ -485,6 +493,7 @@
     </div>
     <p id="f-erro" class="erro-form" hidden></p>
     <div class="botoes-modal">
+      <button class="btn-danger" type="button" id="btn-excluir-turma" hidden style="margin-right:auto">Excluir turma</button>
       <button class="btn-ghost" type="button" id="btn-cancelar">Cancelar</button>
       <button class="btn-primary" type="submit" id="btn-salvar">Salvar</button>
     </div>
@@ -593,14 +602,7 @@
         <button class="btn-primary" type="submit" id="lig-submit">Registrar ligação</button>
       </div>
     </form>
-    <div class="tabela-wrap" id="lig-tabela-wrap">
-      <table class="hist-tabela">
-        <thead>
-          <tr><th>Data</th><th>Hora</th><th>Resultado</th><th>Quem ligou</th><th>Observação</th><th></th></tr>
-        </thead>
-        <tbody id="lig-corpo"></tbody>
-      </table>
-    </div>
+    
     <div class="lig-timeline" id="lig-timeline"></div>
   </div>
 </dialog>
@@ -985,7 +987,6 @@
           <div class="acoes so-admin">
             <button class="btn-ghost btn-small" type="button" data-alunos="${esc(c.turma)}">Alunos</button>
             <button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>
-            <button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>
           </div>
         </td>
       </tr>`;
@@ -1045,11 +1046,28 @@
     $('f-inscritos').value = c ? (c.inscritos || 0) : 0;
     $('f-datas').value = c ? c.datas.slice().sort().map(fmtBR).join(', ') : '';
     $('f-erro').hidden = true;
+    $('btn-excluir-turma').hidden = !c;
     $('dlg').showModal();
   }
 
   $('btn-novo').addEventListener('click', () => abrirModal(null));
   $('btn-cancelar').addEventListener('click', () => $('dlg').close());
+
+  $('btn-excluir-turma').addEventListener('click', async () => {
+    const c = cursos.find(x => x.id === editandoId);
+    if (!c) return;
+    if (!(await perguntar(`Excluir ${c.curso} (turma ${c.turma})? Esta ação não pode ser desfeita.`, {titulo: 'Excluir turma', sim: 'Excluir', perigo: true}))) return;
+    try {
+      await excluir(c.id);
+      $('dlg').close();
+      render();
+      renderOutras();
+      setStatus('Turma excluída');
+    } catch(err){
+      $('f-erro').textContent = 'Erro ao excluir: ' + err.message;
+      $('f-erro').hidden = false;
+    }
+  });
 
   $('form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1319,7 +1337,6 @@
     if (canc && s !== 'passada') botoes.push(`<button class="btn-ghost btn-small" type="button" data-acao="reabrir" data-id="${esc(c.id)}">Reabrir</button>`);
     botoes.push(`<button class="btn-ghost btn-small" type="button" data-alunos="${esc(c.turma)}">Alunos</button>`);
     botoes.push(`<button class="btn-ghost btn-small" type="button" data-editar="${esc(c.id)}">Editar</button>`);
-    botoes.push(`<button class="btn-danger btn-small" type="button" data-excluir="${esc(c.id)}">Excluir</button>`);
     return botoes.join('');
   }
 
@@ -1419,6 +1436,19 @@
 
   /* ---------- impressão ---------- */
   $('btn-imprimir').addEventListener('click', () => window.print());
+
+  $('btn-mais').addEventListener('click', e => {
+    e.stopPropagation();
+    const aberto = $('menu-mais').hidden;
+    $('menu-mais').hidden = !aberto;
+    $('btn-mais').setAttribute('aria-expanded', String(aberto));
+  });
+  $('menu-mais').addEventListener('click', e => {
+    if (e.target.closest('button')) $('menu-mais').hidden = true;
+  });
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.menu-mais')) $('menu-mais').hidden = true;
+  });
 
   /* ---------- histórico ---------- */
   async function carregarHistorico(){
@@ -1746,17 +1776,6 @@
 
   function renderLigacoes(){
     const ligs = alLigs.filter(l => l.matricula === ligMatricula);
-    $('lig-corpo').innerHTML = ligs.length ? ligs.map(l => `<tr>
-        <td class="nowrap">${fmtBR(l.data)}</td>
-        <td class="nowrap">${l.hora.slice(0,5)}</td>
-        <td class="nowrap">${esc(l.resultado)}</td>
-        <td class="nowrap">${esc(l.operador || '—')}</td>
-        <td>${esc(l.observacao || '')}</td>
-        <td class="nowrap">
-          <button class="btn-ghost btn-small" type="button" data-lig-editar="${esc(l.id)}">Editar</button>
-          <button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button>
-        </td>
-      </tr>`).join('') : `<tr><td colspan="6" class="vazio">Nenhuma ligação registrada.</td></tr>`;
     $('lig-timeline').innerHTML = ligs.length ? ligs.map(l => `
       <div class="lig-evento">
         <div class="lig-data"><strong>${fmtBR(l.data)}</strong><span class="muted">${l.hora.slice(0,5)}</span></div>
@@ -1939,18 +1958,6 @@
     if (b) $('lig-resultado').value = b.dataset.res;
   });
 
-  const aplicarVisual = on => {
-    document.body.classList.toggle('visual-novo', on);
-    $('btn-visual').textContent = on ? 'Voltar ao visual antigo' : 'Testar visual novo';
-  };
-  let visualOn = false;
-  try { visualOn = localStorage.getItem('visual_novo') === '1'; } catch(e){}
-  aplicarVisual(visualOn);
-  $('btn-visual').addEventListener('click', () => {
-    visualOn = !visualOn;
-    try { localStorage.setItem('visual_novo', visualOn ? '1' : '0'); } catch(e){}
-    aplicarVisual(visualOn);
-  });
   $('busca-fechar').addEventListener('click', () => $('dlg-busca').close());
 
   // abre a turma do aluno e já mostra as ligações dele
