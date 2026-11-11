@@ -1225,7 +1225,8 @@
         }
         return;
       }
-      const nova = {aberta: 'cheia', cheia: 'cancelada', cancelada: 'aberta'}[c.situacao || 'aberta'];
+      const nova = {aberta: 'cheia', cheia: 'aberta'}[c.situacao || 'aberta'];
+      if (!nova) return;
       try {
         if (nova === 'cancelada'){ if (!(await cancelarTurma(c))) return; }
         else await gravar({...dadosDe(c), situacao: nova, cancelada_por: null}, c.id);
