@@ -148,6 +148,10 @@
   #dlg-alunos td{vertical-align:top}
   #dlg-aluno{width:min(640px,96vw)}
   #dlg-busca{width:min(1100px,96vw)}
+  #dlg-espera{width:min(680px,96vw)}
+  .espera-filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:10px}
+  .espera-filtros label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+  .espera-filtros input,.espera-filtros select{min-width:180px}
   .menu-mais{position:relative;display:inline-block}
   .menu-lista{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px}
   .menu-lista[hidden]{display:none}
@@ -338,6 +342,7 @@
   <nav class="abas" role="tablist">
     <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Presencial</button>
     <button class="aba" type="button" role="tab" data-aba="web" aria-selected="false">Web Aula</button>
+    <button class="aba" type="button" role="tab" data-aba="espera" aria-selected="false">Lista de espera</button>
     <button class="aba" type="button" role="tab" data-aba="real" aria-selected="false">Outras turmas</button>
     <button class="aba" type="button" role="tab" data-aba="hist" aria-selected="false">Histórico</button>
   </nav>
@@ -403,6 +408,35 @@
     </section>
   </div>
 </div>
+
+<section id="aba-espera" class="dash" hidden>
+  <div class="espera-filtros">
+    <label>Buscar
+      <input type="search" id="esp-busca" placeholder="Nome, CPF, telefone, e-mail ou matrícula">
+    </label>
+    <label>Curso
+      <select id="esp-curso"></select>
+    </label>
+    <label>Status
+      <select id="esp-status">
+        <option value="">Todos</option>
+        <option value="aguardando">Aguardando turma nova</option>
+        <option value="matriculado">Já matriculado</option>
+        <option value="desistiu">Desistiu</option>
+      </select>
+    </label>
+    <button class="btn-primary" type="button" id="esp-novo">+ Adicionar à lista</button>
+  </div>
+  <p class="muted" id="esp-dica"></p>
+  <div class="tabela-wrap">
+    <table class="hist-tabela">
+      <thead>
+        <tr><th>Nome</th><th>Contato</th><th>Curso</th><th>Status</th><th>Observação</th><th></th></tr>
+      </thead>
+      <tbody id="esp-corpo"></tbody>
+    </table>
+  </div>
+</section>
 
 <section id="aba-real" class="dash" hidden>
   <div class="cal-filtros" id="outras-chips" style="margin-bottom:12px">
@@ -680,6 +714,49 @@
       </table>
     </div>
   </div>
+</dialog>
+
+<datalist id="cursos-lista"></datalist>
+
+<dialog id="dlg-espera">
+  <form id="espera-form">
+    <h2 id="espera-titulo">Adicionar à lista de espera</h2>
+    <div class="campos">
+      <label class="rot">Nome
+        <input id="ef-nome" required>
+      </label>
+      <label class="rot">Curso que aguarda
+        <input id="ef-curso" list="cursos-lista" required placeholder="escolha ou digite o curso">
+      </label>
+      <label class="rot">CPF <span class="muted">(opcional)</span>
+        <input id="ef-cpf" inputmode="numeric" placeholder="com ou sem pontos">
+      </label>
+      <label class="rot">Matrícula <span class="muted">(se já tiver cadastro)</span>
+        <input id="ef-matricula" type="number" min="1" step="1">
+      </label>
+      <label class="rot">Telefone <span class="muted">(opcional)</span>
+        <input id="ef-tel">
+      </label>
+      <label class="rot">E-mail <span class="muted">(opcional)</span>
+        <input id="ef-email" type="email">
+      </label>
+      <label class="rot full">Status
+        <select id="ef-status">
+          <option value="aguardando">Aguardando turma nova</option>
+          <option value="matriculado">Já matriculado</option>
+          <option value="desistiu">Desistiu</option>
+        </select>
+      </label>
+      <label class="rot full">Observação
+        <textarea id="ef-obs" rows="2" placeholder="Ex.: pediu para ser chamado no fim do mês"></textarea>
+      </label>
+    </div>
+    <p id="ef-erro" class="erro-form" hidden></p>
+    <div class="botoes-modal">
+      <button class="btn-ghost" type="button" id="ef-cancelar">Cancelar</button>
+      <button class="btn-primary" type="submit">Salvar</button>
+    </div>
+  </form>
 </dialog>
 
 <dialog id="dlg-confirm">
@@ -1411,11 +1488,13 @@
     if (ehLista) modalAba = nome === 'web' ? 'web' : 'presencial';
     $('aba-lista').hidden = !ehLista;
     $('aba-real').hidden = nome !== 'real';
+    $('aba-espera').hidden = nome !== 'espera';
     $('aba-hist').hidden = nome !== 'hist';
     document.querySelectorAll('.aba').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
     if (ehLista) render();
     if (nome === 'real') renderOutras();
+    if (nome === 'espera') carregarEsperaTela();
     if (nome === 'hist') carregarHistorico();
   }
   document.querySelectorAll('.aba').forEach(b =>
@@ -1968,6 +2047,155 @@
     $('dlg-busca').close();
     await abrirAlunos(b.dataset.turma);
     abrirLigacoes(matricula);
+  });
+
+  /* ---------- lista de espera ---------- */
+  const ESPERA_STATUS = {aguardando: 'Aguardando turma nova', matriculado: 'Já matriculado', desistiu: 'Desistiu'};
+  let esperaLista = [];
+  let esperaEditandoId = null;
+
+  function cursosConhecidos(){
+    return [...new Set([...cursos.map(c => c.curso), ...esperaLista.map(e => e.curso)])]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }
+
+  async function carregarEspera(){
+    esperaLista = await api('GET', '?select=*&order=criado_em.desc', null, 'lista_espera');
+    const atual = $('esp-curso').value;
+    $('esp-curso').innerHTML = '<option value="">Todos os cursos</option>' +
+      cursosConhecidos().map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    $('esp-curso').value = atual;
+    $('cursos-lista').innerHTML = cursosConhecidos().map(n => `<option value="${esc(n)}"></option>`).join('');
+  }
+
+  function renderEspera(){
+    const busca = $('esp-busca').value.trim().toLowerCase();
+    const dig = busca.replace(/\D/g, '');
+    const curso = $('esp-curso').value;
+    const st = $('esp-status').value;
+    const lista = esperaLista.filter(e =>
+      (!curso || e.curso === curso) &&
+      (!st || e.status === st) &&
+      (!busca ||
+        `${e.nome} ${e.email || ''} ${e.matricula || ''}`.toLowerCase().includes(busca) ||
+        (dig && (String(e.cpf || '').replace(/\D/g, '').includes(dig) ||
+                 String(e.telefone || '').replace(/\D/g, '').includes(dig)))));
+
+    if (curso){
+      const aguardando = esperaLista.filter(e => e.curso === curso && e.status === 'aguardando').length;
+      const abertas = cursos.filter(c => c.curso === curso && naListaPrincipal(c)).length;
+      $('esp-dica').innerHTML = `${aguardando} aguardando este curso · ${abertas ? `<strong>${abertas} turma(s) aberta(s) agora</strong>, pode entrar em contato` : 'nenhuma turma aberta no momento'}`;
+    } else {
+      $('esp-dica').textContent = '';
+    }
+
+    $('esp-corpo').innerHTML = lista.length ? lista.map(e => {
+      const abertas = cursos.filter(c => c.curso === e.curso && naListaPrincipal(c)).length;
+      return `<tr>
+        <td>${esc(e.nome)}${e.matricula ? `<br><span class="muted">Matrícula ${e.matricula}</span>` : ''}</td>
+        <td class="nowrap">${telLink(e.telefone)}${e.email ? `<br><span class="muted">${esc(e.email)}</span>` : ''}${e.cpf ? `<br><span class="muted">CPF ${esc(e.cpf)}</span>` : ''}</td>
+        <td>${esc(e.curso)}${abertas ? `<br><span class="lig-selo ok">${abertas} turma(s) aberta(s)</span>` : ''}</td>
+        <td><select data-esp-status="${esc(e.id)}">
+          ${Object.entries(ESPERA_STATUS).map(([v, l]) => `<option value="${v}" ${e.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select></td>
+        <td>${esc(e.observacao || '')}</td>
+        <td class="al-acoes">
+          <button class="btn-ghost btn-small" type="button" data-esp-editar="${esc(e.id)}">Editar</button>
+          <button class="btn-danger btn-small" type="button" data-esp-excluir="${esc(e.id)}">Excluir</button>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" class="vazio">Nenhum nome na lista de espera.</td></tr>`;
+  }
+
+  async function carregarEsperaTela(){
+    try {
+      await carregarEspera();
+      renderEspera();
+    } catch(err){
+      setStatus('Erro ao carregar lista de espera: ' + err.message, true);
+    }
+  }
+
+  function abrirEspera(id){
+    const e = id ? esperaLista.find(x => x.id === id) : null;
+    esperaEditandoId = e ? e.id : null;
+    $('espera-titulo').textContent = e ? 'Editar nome na lista de espera' : 'Adicionar à lista de espera';
+    $('ef-nome').value = e ? e.nome : '';
+    $('ef-curso').value = e ? e.curso : ($('esp-curso').value || '');
+    $('ef-cpf').value = e ? (e.cpf || '') : '';
+    $('ef-matricula').value = e && e.matricula ? e.matricula : '';
+    $('ef-tel').value = e ? (e.telefone || '') : '';
+    $('ef-email').value = e ? (e.email || '') : '';
+    $('ef-status').value = e ? e.status : 'aguardando';
+    $('ef-obs').value = e ? (e.observacao || '') : '';
+    $('ef-erro').hidden = true;
+    $('dlg-espera').showModal();
+  }
+
+  $('esp-novo').addEventListener('click', () => abrirEspera(null));
+  $('esp-busca').addEventListener('input', renderEspera);
+  $('esp-curso').addEventListener('change', renderEspera);
+  $('esp-status').addEventListener('change', renderEspera);
+  $('ef-cancelar').addEventListener('click', () => $('dlg-espera').close());
+
+  $('espera-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const erro = msg => { $('ef-erro').textContent = msg; $('ef-erro').hidden = false; };
+    const nome = $('ef-nome').value.trim();
+    const curso = $('ef-curso').value.trim();
+    const cpf = $('ef-cpf').value.replace(/\D/g, '');
+    if (!nome) return erro('Informe o nome.');
+    if (!curso) return erro('Informe o curso que a pessoa aguarda.');
+    if (cpf && cpf.length !== 11) return erro('O CPF precisa ter 11 números.');
+    const dados = {
+      nome,
+      curso,
+      cpf: cpf || null,
+      matricula: parseInt($('ef-matricula').value, 10) || null,
+      telefone: $('ef-tel').value.trim() || null,
+      email: $('ef-email').value.trim() || null,
+      status: $('ef-status').value,
+      observacao: $('ef-obs').value.trim() || null
+    };
+    try {
+      if (esperaEditandoId) await api('PATCH', `?id=eq.${esperaEditandoId}`, dados, 'lista_espera');
+      else await api('POST', '', dados, 'lista_espera');
+      $('dlg-espera').close();
+      await carregarEspera();
+      renderEspera();
+      setStatus('Lista de espera salva');
+    } catch(err){
+      erro('Erro ao salvar: ' + err.message);
+    }
+  });
+
+  $('esp-corpo').addEventListener('change', async e => {
+    const sel = e.target.closest('[data-esp-status]');
+    if (!sel) return;
+    try {
+      await api('PATCH', `?id=eq.${sel.dataset.espStatus}`, {status: sel.value}, 'lista_espera');
+      await carregarEspera();
+      renderEspera();
+      setStatus('Status atualizado');
+    } catch(err){
+      setStatus('Erro ao atualizar: ' + err.message, true);
+    }
+  });
+
+  $('esp-corpo').addEventListener('click', async e => {
+    const ed = e.target.closest('[data-esp-editar]');
+    if (ed) return abrirEspera(ed.dataset.espEditar);
+    const ex = e.target.closest('[data-esp-excluir]');
+    if (!ex) return;
+    const item = esperaLista.find(x => x.id === ex.dataset.espExcluir);
+    if (!(await perguntar(`Remover ${item ? item.nome : 'este nome'} da lista de espera?`, {titulo: 'Remover da lista', sim: 'Remover', perigo: true}))) return;
+    try {
+      await api('DELETE', `?id=eq.${ex.dataset.espExcluir}`, null, 'lista_espera');
+      await carregarEspera();
+      renderEspera();
+    } catch(err){
+      setStatus('Erro ao remover: ' + err.message, true);
+    }
   });
 
   /* ---------- nome de quem faz a ação ---------- */
