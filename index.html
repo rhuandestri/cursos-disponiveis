@@ -147,6 +147,22 @@
   #dlg-alunos table{width:100%}
   #dlg-alunos td{vertical-align:top}
   #dlg-aluno{width:min(640px,96vw)}
+  #dlg-busca{width:min(1100px,96vw)}
+  .res-rapidos{display:flex;flex-wrap:wrap;gap:8px}
+  .lig-timeline{display:none;flex-direction:column;gap:10px}
+  .lig-evento{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:10px 12px;border:1px solid rgba(127,127,127,.25);border-radius:10px}
+  .lig-evento .lig-data{display:flex;flex-direction:column;gap:2px}
+  .lig-evento p{margin:6px 0 0;font-size:14px}
+  .lig-evento .lig-acoes{display:flex;gap:6px;margin-top:8px}
+  .lig-selo{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:rgba(127,127,127,.18)}
+  .lig-selo.ok{background:#d9f2e3;color:#1d6b3a}
+  body.visual-novo #lig-tabela-wrap{display:none}
+  body.visual-novo .lig-timeline{display:flex}
+  body.visual-novo #corpo tr[data-st="aberta"] td:first-child{box-shadow:inset 4px 0 0 #2e9e5b}
+  body.visual-novo #corpo tr[data-st="cheia"] td:first-child{box-shadow:inset 4px 0 0 #d9a406}
+  body.visual-novo #real-corpo tr[data-st="andamento"] td:first-child{box-shadow:inset 4px 0 0 #2b74c9}
+  body.visual-novo #real-corpo tr[data-st="cancelada"] td:first-child{box-shadow:inset 4px 0 0 #c0392b}
+  body.visual-novo #real-corpo tr[data-st="passada"] td:first-child{box-shadow:inset 4px 0 0 #8a8a8a}
   .al-acoes{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
   dialog form{padding:20px;display:grid;gap:14px}
   dialog h2{margin:0;font-size:18px;color:var(--primary)}
@@ -263,7 +279,7 @@
 
   @media print{
     body{background:#fff;color:#000;padding:0}
-    .acoes-topo,.abas,.toolbar,.sidebar,.resumo,#aba-dash,#aba-hist,.so-admin,.sub,.logo-escuro{display:none !important}
+    .acoes-topo,.abas,.toolbar,.sidebar,.resumo,#aba-hist,.so-admin,.sub,.logo-escuro{display:none !important}
     .layout{display:block}
     .tabela-wrap{border:0;box-shadow:none;overflow:visible}
     table{min-width:0}
@@ -302,8 +318,10 @@
     </div>
     <div class="acoes-topo">
       <button class="btn-ghost" id="btn-tema" type="button" aria-label="Alternar modo claro e escuro">🌙 Escuro</button>
+      <button class="btn-ghost" id="btn-buscar-aluno" type="button">Buscar aluno</button>
       <button class="btn-primary so-admin" id="btn-novo" type="button">+ Nova turma</button>
       <button class="btn-ghost" id="btn-imprimir" type="button">Imprimir</button>
+      <button class="btn-ghost" id="btn-visual" type="button">Testar visual novo</button>
       <button class="btn-ghost" id="btn-backup" type="button">Baixar backup</button>
       <span class="credito">Desenvolvido por: Rhuan / Camila</span>
     </div>
@@ -312,7 +330,6 @@
   <nav class="abas" role="tablist">
     <button class="aba" type="button" role="tab" data-aba="lista" aria-selected="true">Presencial</button>
     <button class="aba" type="button" role="tab" data-aba="web" aria-selected="false">Web Aula</button>
-    <button class="aba" type="button" role="tab" data-aba="dash" aria-selected="false">Dashboard</button>
     <button class="aba" type="button" role="tab" data-aba="real" aria-selected="false">Outras turmas</button>
     <button class="aba" type="button" role="tab" data-aba="hist" aria-selected="false">Histórico</button>
   </nav>
@@ -378,31 +395,6 @@
     </section>
   </div>
 </div>
-
-<section id="aba-dash" class="dash" hidden>
-  <div class="dash-topo">
-    <label class="campo">Mostrar
-      <select id="dash-periodo">
-        <option value="30">Próximos 30 dias</option>
-        <option value="60">Próximos 60 dias</option>
-        <option value="90">Próximos 90 dias</option>
-        <option value="0">Todas as datas futuras</option>
-      </select>
-    </label>
-  </div>
-  <div id="alertas"></div>
-  <div class="kpis" id="kpis"></div>
-  <div class="dash-grid">
-    <div>
-      <h3>Cursos</h3>
-      <div class="painel"><div class="cards-cursos" id="cards-cursos"></div></div>
-    </div>
-    <div>
-      <h3>Próximas datas</h3>
-      <div class="painel lista-prox" id="proximas"></div>
-    </div>
-  </div>
-</section>
 
 <section id="aba-real" class="dash" hidden>
   <div class="cal-filtros" id="outras-chips" style="margin-bottom:12px">
@@ -577,6 +569,11 @@
         <label class="rot">Hora
           <input type="time" id="lig-hora" required>
         </label>
+        <div class="full res-rapidos">
+          <button class="btn-ghost btn-small" type="button" data-res="Não atendeu">Não atendeu</button>
+          <button class="btn-ghost btn-small" type="button" data-res="Caixa postal">Caixa postal</button>
+          <button class="btn-ghost btn-small" type="button" data-res="Atendeu">Atendeu</button>
+        </div>
         <label class="rot full">Resultado
           <select id="lig-resultado" required>
             <option>Não atendeu</option>
@@ -596,7 +593,7 @@
         <button class="btn-primary" type="submit" id="lig-submit">Registrar ligação</button>
       </div>
     </form>
-    <div class="tabela-wrap">
+    <div class="tabela-wrap" id="lig-tabela-wrap">
       <table class="hist-tabela">
         <thead>
           <tr><th>Data</th><th>Hora</th><th>Resultado</th><th>Quem ligou</th><th>Observação</th><th></th></tr>
@@ -604,6 +601,7 @@
         <tbody id="lig-corpo"></tbody>
       </table>
     </div>
+    <div class="lig-timeline" id="lig-timeline"></div>
   </div>
 </dialog>
 
@@ -657,6 +655,29 @@
       <button class="btn-primary" type="submit" id="nome-ok">Confirmar</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="dlg-busca">
+  <div class="cal-box">
+    <div class="cal-topo">
+      <div>
+        <h2>Buscar aluno</h2>
+        <p class="muted" id="busca-msg"></p>
+      </div>
+      <button class="btn-ghost btn-small" type="button" id="busca-fechar">Fechar</button>
+    </div>
+    <label class="rot">CPF, nome, matrícula ou e-mail
+      <input type="search" id="busca-geral" placeholder="Procura em todas as turmas" autocomplete="off">
+    </label>
+    <div class="tabela-wrap">
+      <table class="hist-tabela">
+        <thead>
+          <tr><th>Matrícula / CPF</th><th>Aluno / e-mail</th><th>Turma</th><th>Situação</th><th>Ligações</th><th></th></tr>
+        </thead>
+        <tbody id="busca-corpo"></tbody>
+      </table>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="dlg-confirm">
@@ -951,7 +972,7 @@
       return `<span class="chip ${f ? 'fds' : ''}">${fmtBR(d).slice(0,5)} · ${DIAS[toDate(d).getDay()]}</span>`;
     }).join('');
     return `
-      <tr class="${fds !== 'Não' ? 'fds' : ''} ${prox ? '' : 'encerrada'} ${c.situacao === 'cancelada' ? 'cancelada' : ''}">
+      <tr data-st="${statusTurma(c)}" class="${fds !== 'Não' ? 'fds' : ''} ${prox ? '' : 'encerrada'} ${c.situacao === 'cancelada' ? 'cancelada' : ''}">
         <td class="nowrap">${prox ? `<span class="prox">${fmtBR(prox)}</span>` : `<span class="badge enc">Encerrada</span>`}</td>
         <td class="curso"><button class="link-curso" type="button" data-calendario="${esc(c.curso)}" data-turma-cal="${esc(c.turma)}" title="Ver calendário desta turma">${esc(c.curso)}</button></td>
         <td class="nowrap">${esc(c.turma)}</td>
@@ -972,7 +993,6 @@
 
   function render(){
     renderSidebar();
-    renderDashboard();
 
     const busca = $('busca').value.trim().toLowerCase();
     const fdsF = $('filtro-fds').value;
@@ -1267,91 +1287,6 @@
     render();
   });
 
-  /* ---------- dashboard ---------- */
-  const DIAS_LONGOS = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
-
-  function renderDashboard(){
-    const h0 = hoje();
-    const dias = +$('dash-periodo').value;
-    const limite = new Date(h0);
-    limite.setDate(limite.getDate() + (dias || 36500));
-
-    // só turmas que ainda vão acontecer (sem passadas e sem canceladas)
-    const base = cursos.filter(c => statusTurma(c) !== 'passada' && c.situacao !== 'cancelada');
-
-    const entradas = [];
-    base.forEach(t => t.datas.forEach(d => {
-      if (toDate(d) >= h0) entradas.push({data: d, turma: t.turma, curso: t.curso, horario: t.horario});
-    }));
-    entradas.sort((a,b) => a.data.localeCompare(b.data) || a.curso.localeCompare(b.curso,'pt-BR'));
-
-    const noPeriodo = entradas.filter(e => toDate(e.data) <= limite);
-    const turmasNoPeriodo = new Set(noPeriodo.map(e => e.turma));
-    const comFds = base.filter(t => statusFds(t.datas) !== 'Não').length;
-    const nCursos = new Set(base.map(t => t.curso)).size;
-    const primeira = entradas[0];
-    const abertas = base.filter(t => statusTurma(t) === 'aberta').length;
-    const totalInsc = base.reduce((s, t) => s + (t.inscritos || 0), 0);
-
-    // alerta: aberta, começa em até 7 dias e com poucos inscritos
-    const lim7 = new Date(h0);
-    lim7.setDate(lim7.getDate() + 7);
-    const alerta = base.filter(t => {
-      const p = toDate(primeiraData(t));
-      return statusTurma(t) === 'aberta' && p >= h0 && p <= lim7 && (t.inscritos || 0) < MIN_INSCRITOS;
-    });
-    $('alertas').innerHTML = alerta.length
-      ? `<div class="alerta"><strong>Atenção:</strong> turmas abertas que começam em até 7 dias e têm menos de ${MIN_INSCRITOS} inscritos:
-          <ul>${alerta.map(t => `<li>${esc(t.curso)} · Turma ${esc(t.turma)} · começa ${fmtBR(primeiraData(t))} · ${t.inscritos || 0} inscrito(s)</li>`).join('')}</ul></div>`
-      : '';
-
-    $('kpis').innerHTML = [
-      ['Cursos diferentes', nCursos],
-      ['Turmas ativas', base.length],
-      ['Turmas abertas', abertas],
-      ['Total de inscritos', totalInsc],
-      ['Turmas com aula no período', turmasNoPeriodo.size],
-      ['Turmas com fim de semana', comFds],
-      ['Próxima aula', primeira ? fmtBR(primeira.data) : '—']
-    ].map(([rot, val]) => `<div class="kpi"><span>${rot}</span><strong>${val}</strong></div>`).join('');
-
-    const porDia = new Map();
-    noPeriodo.forEach(e => {
-      if (!porDia.has(e.data)) porDia.set(e.data, []);
-      porDia.get(e.data).push(e);
-    });
-    $('proximas').innerHTML = porDia.size
-      ? [...porDia].map(([d, itens]) => `
-          <div class="prox-dia ${isFds(d) ? 'fds' : ''}">
-            <div class="prox-data">
-              <strong>${fmtBR(d)}</strong>
-              <span>${DIAS_LONGOS[toDate(d).getDay()]}</span>
-            </div>
-            <ul>
-              ${itens.map(e => `<li><span class="prox-curso">${esc(e.curso)}</span>
-                <span class="muted">· Turma ${esc(e.turma)} · ${esc(e.horario)}</span></li>`).join('')}
-            </ul>
-          </div>`).join('')
-      : '<p class="muted">Nenhuma data futura cadastrada.</p>';
-
-    const nomes = [...new Set(base.map(t => t.curso))].sort((a,b) => a.localeCompare(b,'pt-BR'));
-    $('cards-cursos').innerHTML = nomes.map(nome => {
-      const qtd = base.filter(t => t.curso === nome).length;
-      const prox = entradas.find(e => e.curso === nome);
-      return `
-        <button class="card-curso" type="button" data-calendario="${esc(nome)}">
-          <strong>${esc(nome)}</strong>
-          <span class="muted">${qtd} turma(s)</span>
-          <span class="prox-info">${prox ? `Próxima: ${fmtBR(prox.data)} · Turma ${esc(prox.turma)}` : 'Encerrado'}</span>
-        </button>`;
-    }).join('') || '<p class="muted">Nenhum curso cadastrado.</p>';
-  }
-
-  $('cards-cursos').addEventListener('click', e => {
-    const b = e.target.closest('[data-calendario]');
-    if (b) abrirCalendario(b.dataset.calendario);
-  });
-
   let outrasTipo = 'andamento';
   const OUTRAS = {
     todas: {
@@ -1403,7 +1338,7 @@
       const canc = c.situacao === 'cancelada';
       const rotulo = canc ? `Cancelada${c.cancelada_por ? ' por ' + esc(c.cancelada_por) : ''}` : statusTurma(c) === 'andamento' ? 'Em andamento' : 'Realizada';
       return `
-        <tr class="${canc ? 'cancelada' : ''}">
+        <tr data-st="${canc ? 'cancelada' : statusTurma(c) === 'andamento' ? 'andamento' : 'passada'}" class="${canc ? 'cancelada' : ''}">
           <td class="nowrap">${periodo}</td>
           <td>${esc(c.curso)}</td>
           <td class="nowrap">${esc(c.turma)}</td>
@@ -1458,13 +1393,11 @@
     const ehLista = nome === 'lista' || nome === 'web';
     if (ehLista) modalAba = nome === 'web' ? 'web' : 'presencial';
     $('aba-lista').hidden = !ehLista;
-    $('aba-dash').hidden = nome !== 'dash';
     $('aba-real').hidden = nome !== 'real';
     $('aba-hist').hidden = nome !== 'hist';
     document.querySelectorAll('.aba').forEach(b =>
       b.setAttribute('aria-selected', String(b.dataset.aba === nome)));
     if (ehLista) render();
-    if (nome === 'dash') renderDashboard();
     if (nome === 'real') renderOutras();
     if (nome === 'hist') carregarHistorico();
   }
@@ -1573,7 +1506,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  $('dash-periodo').addEventListener('change', renderDashboard);
 
   /* ---------- alunos e ligações da turma ---------- */
   let alTurma = '';     // código da turma aberta
@@ -1825,6 +1757,19 @@
           <button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button>
         </td>
       </tr>`).join('') : `<tr><td colspan="6" class="vazio">Nenhuma ligação registrada.</td></tr>`;
+    $('lig-timeline').innerHTML = ligs.length ? ligs.map(l => `
+      <div class="lig-evento">
+        <div class="lig-data"><strong>${fmtBR(l.data)}</strong><span class="muted">${l.hora.slice(0,5)}</span></div>
+        <div>
+          <span class="lig-selo ${l.resultado === 'Atendeu' ? 'ok' : ''}">${esc(l.resultado)}</span>
+          <span class="muted"> · ${esc(l.operador || '—')}</span>
+          ${l.observacao ? `<p>${esc(l.observacao)}</p>` : ''}
+          <div class="lig-acoes">
+            <button class="btn-ghost btn-small" type="button" data-lig-editar="${esc(l.id)}">Editar</button>
+            <button class="btn-danger btn-small" type="button" data-lig-excluir="${esc(l.id)}">Excluir</button>
+          </div>
+        </div>
+      </div>`).join('') : `<p class="muted">Nenhuma ligação registrada.</p>`;
   }
 
   function abrirLigacoes(matricula){
@@ -1918,7 +1863,7 @@
     }
   });
 
-  $('lig-corpo').addEventListener('click', async e => {
+  $('dlg-lig').addEventListener('click', async e => {
     const ed = e.target.closest('[data-lig-editar]');
     if (ed) return editarLigacao(ed.dataset.ligEditar);
     const ex = e.target.closest('[data-lig-excluir]');
@@ -1934,6 +1879,88 @@
     } catch(err){
       setStatus('Erro ao excluir: ' + err.message, true);
     }
+  });
+
+  /* ---------- busca de aluno em todas as turmas ---------- */
+  let buscaTodos = [];   // todos os alunos de todas as turmas
+  let buscaLigs = [];    // ligações (só a matrícula, para contar)
+
+  async function carregarBuscaGeral(){
+    const [alunos, ligs] = await Promise.all([
+      api('GET', '?select=*&order=aluno.asc', null, 'alunos'),
+      api('GET', '?select=matricula', null, 'ligacoes')
+    ]);
+    buscaTodos = alunos;
+    buscaLigs = ligs;
+    $('busca-msg').textContent = `${alunos.length} aluno(s) cadastrados em todas as turmas.`;
+  }
+
+  function renderBuscaGeral(){
+    const termo = $('busca-geral').value.trim().toLowerCase();
+    if (!termo){
+      $('busca-corpo').innerHTML = `<tr><td colspan="6" class="vazio">Digite um CPF, nome ou matrícula.</td></tr>`;
+      return;
+    }
+    const dig = termo.replace(/\D/g, '');
+    const achados = buscaTodos.filter(a =>
+      `${a.aluno} ${a.matricula} ${a.email || ''}`.toLowerCase().includes(termo) ||
+      (dig && String(a.cpf || '').replace(/\D/g, '').includes(dig))).slice(0, 100);
+    $('busca-corpo').innerHTML = achados.length ? achados.map(a => {
+      const c = cursos.find(x => x.turma === a.turma);
+      const n = buscaLigs.filter(l => l.matricula === a.matricula).length;
+      return `<tr>
+        <td class="nowrap">${a.matricula}<br><span class="muted">CPF ${esc(a.cpf || '—')}</span></td>
+        <td>${esc(a.aluno)}${a.email ? `<br><span class="muted">${esc(a.email)}</span>` : ''}</td>
+        <td>${esc(a.turma)}<br><span class="muted">${esc(c ? c.curso : '')}</span></td>
+        <td class="nowrap">${esc(a.situacao_matricula || '—')}<br><span class="muted">${esc(a.situacao_pagamento || '')}</span></td>
+        <td class="nowrap">${n} ${n === 1 ? 'tentativa' : 'tentativas'}</td>
+        <td><button class="btn-ghost btn-small" type="button" data-busca-abrir="${a.matricula}" data-turma="${esc(a.turma)}">Abrir ficha</button></td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" class="vazio">Nenhum aluno encontrado.</td></tr>`;
+  }
+
+  $('btn-buscar-aluno').addEventListener('click', async () => {
+    $('busca-geral').value = '';
+    $('busca-msg').textContent = 'Carregando…';
+    renderBuscaGeral();
+    $('dlg-busca').showModal();
+    $('busca-geral').focus();
+    try {
+      await carregarBuscaGeral();
+      renderBuscaGeral();
+    } catch(err){
+      $('busca-msg').textContent = 'Erro ao carregar: ' + err.message;
+    }
+  });
+  $('busca-geral').addEventListener('input', renderBuscaGeral);
+
+  document.querySelector('.res-rapidos').addEventListener('click', e => {
+    const b = e.target.closest('[data-res]');
+    if (b) $('lig-resultado').value = b.dataset.res;
+  });
+
+  const aplicarVisual = on => {
+    document.body.classList.toggle('visual-novo', on);
+    $('btn-visual').textContent = on ? 'Voltar ao visual antigo' : 'Testar visual novo';
+  };
+  let visualOn = false;
+  try { visualOn = localStorage.getItem('visual_novo') === '1'; } catch(e){}
+  aplicarVisual(visualOn);
+  $('btn-visual').addEventListener('click', () => {
+    visualOn = !visualOn;
+    try { localStorage.setItem('visual_novo', visualOn ? '1' : '0'); } catch(e){}
+    aplicarVisual(visualOn);
+  });
+  $('busca-fechar').addEventListener('click', () => $('dlg-busca').close());
+
+  // abre a turma do aluno e já mostra as ligações dele
+  $('busca-corpo').addEventListener('click', async e => {
+    const b = e.target.closest('[data-busca-abrir]');
+    if (!b) return;
+    const matricula = Number(b.dataset.buscaAbrir);
+    $('dlg-busca').close();
+    await abrirAlunos(b.dataset.turma);
+    abrirLigacoes(matricula);
   });
 
   /* ---------- nome de quem faz a ação ---------- */
